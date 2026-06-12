@@ -1,0 +1,7 @@
+Hit #5: HASH por fuerza bruta con CUDA
+
+Se modificó el programa del Hit #4 para recibir dos parámetros: una cadena base y un prefijo buscado. El objetivo es encontrar un número (nonce) tal que al concatenarlo con la cadena base y calcular el MD5, el resultado empiece con el prefijo indicado.
+La versión CUDA lanza miles de hilos en paralelo, donde cada hilo prueba un nonce distinto. El kernel construye el string cadena + nonce, calcula el MD5, convierte el digest a hexadecimal y compara los primeros caracteres con el prefijo buscado. Cuando un hilo encuentra una coincidencia, usa atomicCAS para asegurarse de que solo un hilo escriba el resultado (evitando condiciones de carrera). Si en un batch no se encuentra solución, se lanza otro batch con el rango siguiente hasta encontrarla.
+La versión CPU en Python hace lo mismo de forma secuencial: itera desde nonce = 0 probando uno por uno hasta encontrar el primero que coincida.
+Al ejecutar ambas versiones con cadena "hola mundo" y prefijo "0000", las dos encontraron el mismo nonce (16374) y el mismo hash (000084c5c023d52aea111d3da5ccce3e), verificando que la implementación CUDA es correcta.
+Vale aclarar que no existe un único nonce válido, cualquier número cuyo hash empiece con el prefijo es solución. La GPU puede encontrar uno distinto al de Python dependiendo del orden en que los hilos procesen los rangos, pero ambos son igualmente válidos.
