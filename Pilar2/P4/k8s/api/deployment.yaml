@@ -1,28 +1,32 @@
 apiVersion: apps/v1
 kind: Deployment
+
 metadata:
-  name: blockchain-api
+  name: blockchain-nct
+
 spec:
   replicas: 2
 
   selector:
     matchLabels:
-      app: blockchain-api
+      app: blockchain-nct
 
   template:
+
     metadata:
       labels:
-        app: blockchain-api
+        app: blockchain-nct
 
     spec:
-      containers:
-      - name: api
 
-        image: ianott/blockchain-api:latest
+      containers:
+
+      - name: nct
+
+        image: bachi7/blockchain-nct4:latest
 
         ports:
+
         - containerPort: 8000
-        resources:
-            limits:
-              nvidia.com/gpu: 1
+        
       
