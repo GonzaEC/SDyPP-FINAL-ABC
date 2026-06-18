@@ -49,7 +49,7 @@ def mine(req: MineRequest):
 
     result = subprocess.run(
         [
-            "./minero.exe",
+            "./minero",
             req.difficulty,
             req.data,
             str(req.start),
