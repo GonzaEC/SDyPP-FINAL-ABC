@@ -1,36 +1,30 @@
-#compilacion:
-FROM nvidia/cuda:12.4.0-devel-ubuntu22.04 AS builder
+FROM nvidia/cuda:12.2.0-devel-ubuntu22.04 AS builder
 
 WORKDIR /build
 
 COPY brute_force_range.cu .
 
+
 RUN nvcc \
-    -gencode arch=compute_61,code=sm_61 \
+    -gencode arch=compute_89,code=sm_89 \
     -O3 \
     brute_force_range.cu \
     -o minero
 
-
-# ---------- Imagen final ----------
-FROM nvidia/cuda:12.4.0-runtime-ubuntu22.04
+FROM nvidia/cuda:12.2.0-runtime-ubuntu22.04
 
 WORKDIR /app
 
 RUN apt-get update && \
-    apt-get install -y --no-install-recommends \
-    python3 \
-    python3-pip && \
+    # --no-install-recommends evita descargar basura extra
+    apt-get install -y --no-install-recommends python3 python3-pip && \
     rm -rf /var/lib/apt/lists/*
 
 COPY requirements.txt .
-
 RUN pip3 install --no-cache-dir -r requirements.txt
 
-# Copiar la aplicación
 COPY . .
-
-# Copiar únicamente el binario compilado
 COPY --from=builder /build/minero ./minero
+
 
 CMD ["python3","worker.py"]
