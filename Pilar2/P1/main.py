@@ -2,7 +2,6 @@ from fastapi import FastAPI
 from pydantic import BaseModel
 import subprocess
 import json
-import hashlib
 import time
 
 app = FastAPI()
@@ -23,7 +22,7 @@ class Transaction(BaseModel):
     amount: float
 
 # -------------------------
-# BLOQUE
+# ESTADO LOCAL (simple)
 # -------------------------
 
 pending_transactions = []
@@ -41,26 +40,41 @@ genesis = {
 blockchain.append(genesis)
 
 # -------------------------
-# MINERÍA DIRECTA
+# GPU DETECTION ROBUSTA
 # -------------------------
 
-@app.post("/mine")
-def mine(req: MineRequest):
-    result = subprocess.run(
-        [
-            "./minero",
-            req.data,         
-            req.difficulty,   
-            str(req.start),   
-            str(req.end)      
-        ],
-        capture_output=True,
-        text=True
-    )
+def get_gpu_name():
+    try:
+        result = subprocess.run(
+            ["nvidia-smi", "--query-gpu=name", "--format=csv,noheader"],
+            capture_output=True,
+            text=True
+        )
+        return result.stdout.strip().lower()
+    except Exception:
+        return "unknown"
 
-    return {
-        "result": result.stdout
-    }
+
+def select_binary(gpu_name: str):
+
+    gpu_name = gpu_name.lower()
+
+    if "rtx 40" in gpu_name or "4060" in gpu_name:
+        return "./minero_sm89"
+
+    if "rtx 30" in gpu_name or "3060" in gpu_name or "3050" in gpu_name:
+        return "./minero_sm86"
+
+    if "gtx 10" in gpu_name or "1050" in gpu_name or "1060" in gpu_name:
+        return "./minero_sm61"
+
+    # fallback seguro (evita crash)
+    return "./minero_sm61"
+
+
+def get_binary():
+    gpu = get_gpu_name()
+    return select_binary(gpu)
 
 # -------------------------
 # TRANSACCIONES
@@ -68,38 +82,44 @@ def mine(req: MineRequest):
 
 @app.post("/transaction")
 def add_transaction(tx: Transaction):
-
     pending_transactions.append(tx.dict())
-
     return {
         "status": "stored",
         "count": len(pending_transactions)
     }
 
 # -------------------------
-# CREACIÓN DE BLOQUES
+# MINERÍA DIRECTA
 # -------------------------
 
-def build_block():
+@app.post("/mine")
+def mine(req: MineRequest):
 
-    previous_hash = blockchain[-1]["hash"]
+    binary = get_binary()
 
-    block = {
-        "index": len(blockchain),
-        "timestamp": time.time(),
-        "transactions": pending_transactions,
-        "previous_hash": previous_hash
-    }
+    result = subprocess.run(
+        [
+            binary,
+            req.data,
+            req.difficulty,
+            str(req.start),
+            str(req.end)
+        ],
+        capture_output=True,
+        text=True
+    )
 
-    return block
+    return {"result": result.stdout}
+
+# -------------------------
+# CREACIÓN DE BLOQUES
+# -------------------------
 
 @app.post("/create-block")
 def create_block():
 
     if len(pending_transactions) == 0:
-        return {
-            "error": "No hay transacciones pendientes"
-        }
+        return {"error": "No hay transacciones pendientes"}
 
     previous_hash = blockchain[-1]["hash"]
 
@@ -110,14 +130,13 @@ def create_block():
         "previous_hash": previous_hash
     }
 
-    data = json.dumps(
-        block,
-        sort_keys=True
-    )
+    data = json.dumps(block, sort_keys=True)
+
+    binary = get_binary()
 
     result = subprocess.run(
         [
-            "./minero",
+            binary,
             data,
             "00",
             "0",
@@ -126,38 +145,26 @@ def create_block():
         capture_output=True,
         text=True
     )
-    print("STDOUT:")
+
     print(result.stdout)
-
-    print("STDERR:")
     print(result.stderr)
-
-    print("RETURN CODE:")
-    print(result.returncode)
-
-    salida = result.stdout
 
     nonce = None
     block_hash = None
 
-    for linea in salida.splitlines():
-
-        if linea.startswith("Nonce encontrado:"):
-            nonce = int(linea.split(":")[1].strip())
-
-        if linea.startswith("Hash resultante:"):
-            block_hash = linea.split(":")[1].strip()
+    for line in result.stdout.splitlines():
+        if line.startswith("Nonce encontrado:"):
+            nonce = int(line.split(":")[1].strip())
+        if line.startswith("Hash resultante:"):
+            block_hash = line.split(":")[1].strip()
 
     if nonce is None or block_hash is None:
-        return {
-            "error": "No se encontró solución"
-        }
+        return {"error": "No se encontró solución"}
 
     block["nonce"] = nonce
     block["hash"] = block_hash
 
     blockchain.append(block)
-
     pending_transactions.clear()
 
     return {
@@ -165,21 +172,25 @@ def create_block():
         "block": block
     }
 
-#Endpoint para consultar la blockchain
+# -------------------------
+# CONSULTA BLOCKCHAIN
+# -------------------------
+
 @app.get("/chain")
 def get_chain():
-
     return {
         "length": len(blockchain),
         "chain": blockchain
     }
 
-#validacion
+# -------------------------
+# VALIDACIÓN
+# -------------------------
+
 @app.get("/validate")
 def validate_chain():
 
     for i in range(1, len(blockchain)):
-
         current = blockchain[i]
         previous = blockchain[i - 1]
 
@@ -189,6 +200,4 @@ def validate_chain():
                 "block": i
             }
 
-    return {
-        "valid": True
-    }
+    return {"valid": True}

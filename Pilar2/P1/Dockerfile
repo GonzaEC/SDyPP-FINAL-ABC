@@ -5,11 +5,9 @@ WORKDIR /build
 COPY brute_force_range.cu .
 
 
-RUN nvcc \
-    -gencode arch=compute_89,code=sm_89 \
-    -O3 \
-    brute_force_range.cu \
-    -o minero
+RUN nvcc -gencode arch=compute_61,code=sm_61 brute_force_range.cu -O3 -o minero_sm61
+RUN nvcc -gencode arch=compute_86,code=sm_86 brute_force_range.cu -O3 -o minero_sm86
+RUN nvcc -gencode arch=compute_89,code=sm_89 brute_force_range.cu -O3 -o minero_sm89
 
 
 FROM nvidia/cuda:12.2.0-runtime-ubuntu22.04
@@ -24,6 +22,8 @@ COPY requirements.txt .
 RUN pip3 install --no-cache-dir -r requirements.txt
 
 COPY . .
-COPY --from=builder /build/minero ./minero
+COPY --from=builder /build/minero_sm61 ./minero_sm61
+COPY --from=builder /build/minero_sm86 ./minero_sm86
+COPY --from=builder /build/minero_sm89 ./minero_sm89
 
 CMD ["uvicorn","main:app","--host","0.0.0.0","--port","8000"]
