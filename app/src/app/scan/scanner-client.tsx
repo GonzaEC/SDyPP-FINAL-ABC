@@ -12,56 +12,71 @@ const READER_ID = "qr-reader";
 export function ScannerClient() {
   const scannerRef = useRef<Html5Qrcode | null>(null);
   const [running, setRunning] = useState(false);
+  const [starting, setStarting] = useState(false);
   const [busy, setBusy] = useState(false);
   const [result, setResult] = useState<Result | null>(null);
+  const [cameraError, setCameraError] = useState<string | null>(null);
   const lastSubmittedRef = useRef<string | null>(null);
 
-  const handleScan = useCallback(async (decodedText: string) => {
-    if (busy) return;
-    // Evitar reenviar el mismo QR mientras se procesa.
-    if (lastSubmittedRef.current === decodedText) return;
-    lastSubmittedRef.current = decodedText;
-    setBusy(true);
-    setResult(null);
-    try {
-      const parsed = JSON.parse(decodedText);
-      const res = await fetch("/api/validate", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify(parsed),
-      });
-      const body = await res.json();
-      if (!res.ok) {
+  const handleScan = useCallback(
+    async (decodedText: string) => {
+      if (busy) return;
+      if (lastSubmittedRef.current === decodedText) return;
+      lastSubmittedRef.current = decodedText;
+      setBusy(true);
+      setResult(null);
+      try {
+        const parsed = JSON.parse(decodedText);
+        const res = await fetch("/api/validate", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify(parsed),
+        });
+        const body = await res.json();
+        if (!res.ok) {
+          setResult({
+            kind: "error",
+            code: body.error ?? "unknown",
+            message: translateError(body.error),
+          });
+        } else {
+          setResult({
+            kind: "ok",
+            ticketNumber: body.ticket.ticketNumber,
+            eventName: body.ticket.eventName,
+            venue: body.ticket.venue,
+          });
+        }
+      } catch (err) {
         setResult({
           kind: "error",
-          code: body.error ?? "unknown",
-          message: translateError(body.error),
+          code: "parse_error",
+          message: err instanceof Error ? err.message : "QR ilegible",
         });
-      } else {
-        setResult({
-          kind: "ok",
-          ticketNumber: body.ticket.ticketNumber,
-          eventName: body.ticket.eventName,
-          venue: body.ticket.venue,
-        });
+      } finally {
+        setBusy(false);
+        setTimeout(() => {
+          lastSubmittedRef.current = null;
+        }, 2000);
       }
-    } catch (err) {
-      setResult({
-        kind: "error",
-        code: "parse_error",
-        message: err instanceof Error ? err.message : "QR ilegible",
-      });
-    } finally {
-      setBusy(false);
-      // Liberar el "lock" después de un ratito para permitir reescanear si hace falta.
-      setTimeout(() => {
-        lastSubmittedRef.current = null;
-      }, 2000);
-    }
-  }, [busy]);
+    },
+    [busy],
+  );
 
   async function start() {
-    if (running) return;
+    if (running || starting) return;
+    setCameraError(null);
+    setStarting(true);
+
+    // Pre-flight: ¿existe la API de cámara? (Falla seca si se accede por http en mobile.)
+    if (typeof navigator === "undefined" || !navigator.mediaDevices?.getUserMedia) {
+      setCameraError(
+        "Tu navegador no expone la cámara. Si entraste por http://, en celulares se requiere HTTPS.",
+      );
+      setStarting(false);
+      return;
+    }
+
     const html5Qr = new Html5Qrcode(READER_ID);
     scannerRef.current = html5Qr;
     try {
@@ -70,16 +85,16 @@ export function ScannerClient() {
         { fps: 10, qrbox: { width: 240, height: 240 } },
         (decodedText) => handleScan(decodedText),
         () => {
-          // ignoramos errores de "no encontró un QR en este frame"
+          /* ignoramos errores de "no encontré QR en este frame" */
         },
       );
       setRunning(true);
     } catch (err) {
-      setResult({
-        kind: "error",
-        code: "camera_failed",
-        message: err instanceof Error ? err.message : "No pude abrir la cámara",
-      });
+      const msg = err instanceof Error ? err.message : String(err);
+      setCameraError(humanCameraError(msg));
+      scannerRef.current = null;
+    } finally {
+      setStarting(false);
     }
   }
 
@@ -98,7 +113,6 @@ export function ScannerClient() {
 
   useEffect(() => {
     return () => {
-      // cleanup en unmount
       const s = scannerRef.current;
       if (s) {
         s.stop()
@@ -111,17 +125,46 @@ export function ScannerClient() {
   return (
     <div className="space-y-5">
       <div className="card overflow-hidden">
-        <div
-          id={READER_ID}
-          className="w-full aspect-square bg-[var(--paper-2)] flex items-center justify-center text-[var(--muted)] text-[13px]"
-        >
-          {!running && "Cámara apagada"}
+        {/* El div con el ID es donde html5-qrcode inyecta el <video>. Lo dejamos limpio
+            (sin flex, sin texto adentro) para no pelear con el render del video. */}
+        <div className="relative w-full bg-black" style={{ aspectRatio: "1 / 1" }}>
+          <div id={READER_ID} className="absolute inset-0 w-full h-full [&_video]:w-full [&_video]:h-full [&_video]:object-cover" />
+
+          {!running && (
+            <div className="absolute inset-0 flex flex-col items-center justify-center text-white/70 gap-3 pointer-events-none">
+              <svg width="48" height="48" viewBox="0 0 24 24" fill="none">
+                <path
+                  d="M4 7a2 2 0 0 1 2-2h2l1.5-2h5L16 5h2a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V7Z"
+                  stroke="currentColor"
+                  strokeWidth="1.5"
+                />
+                <circle cx="12" cy="12" r="3.5" stroke="currentColor" strokeWidth="1.5" />
+              </svg>
+              <p className="text-[13px]">
+                {starting ? "Abriendo cámara…" : "Cámara apagada"}
+              </p>
+            </div>
+          )}
+
+          {/* Marco guía para alinear el QR cuando la cámara está activa */}
+          {running && (
+            <div className="absolute inset-0 pointer-events-none flex items-center justify-center">
+              <div
+                className="border-2 border-white/80 rounded-2xl"
+                style={{ width: 240, height: 240, boxShadow: "0 0 0 9999px rgba(0,0,0,0.35)" }}
+              />
+            </div>
+          )}
         </div>
+
         <div className="border-t border-[var(--line)] p-4 flex items-center justify-between gap-3">
           {running ? (
             <button onClick={stop} className="btn btn-secondary btn-sm">Detener cámara</button>
           ) : (
-            <button onClick={start} className="btn btn-primary btn-sm">Iniciar cámara</button>
+            <button onClick={start} disabled={starting} className="btn btn-primary btn-sm">
+              {starting && <span className="spinner" />}
+              {starting ? "Iniciando…" : "Iniciar cámara"}
+            </button>
           )}
           {busy && (
             <span className="text-[12px] text-[var(--muted)] flex items-center gap-2">
@@ -131,6 +174,16 @@ export function ScannerClient() {
           )}
         </div>
       </div>
+
+      {cameraError && (
+        <div
+          className="card p-4 text-[13px]"
+          style={{ borderColor: "var(--danger)", background: "var(--danger-soft)", color: "var(--danger)" }}
+        >
+          <p className="font-semibold mb-1">No pude abrir la cámara</p>
+          <p>{cameraError}</p>
+        </div>
+      )}
 
       {result?.kind === "ok" && (
         <div
@@ -164,6 +217,23 @@ export function ScannerClient() {
       )}
     </div>
   );
+}
+
+function humanCameraError(msg: string): string {
+  const m = msg.toLowerCase();
+  if (m.includes("permission") || m.includes("notallowed")) {
+    return "Permiso denegado. Habilitá la cámara en el menú de candado del navegador.";
+  }
+  if (m.includes("notfound") || m.includes("devicesnotfound")) {
+    return "No encontré una cámara en este dispositivo.";
+  }
+  if (m.includes("notreadable") || m.includes("trackstart")) {
+    return "Otra app está usando la cámara. Cerrá videollamadas o el visor de cámara.";
+  }
+  if (m.includes("secure")) {
+    return "La cámara requiere HTTPS en móviles. Probá con un túnel (cloudflared/ngrok).";
+  }
+  return msg;
 }
 
 function translateError(code: string | undefined): string {
