@@ -2,4 +2,5 @@ fastapi
 uvicorn
 pika
 redis
+kubernetes
 requests
