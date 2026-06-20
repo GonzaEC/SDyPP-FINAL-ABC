@@ -4,7 +4,6 @@ import time
 import redis
 import threading
 import math
-from kubernetes import client, config
 
 # TRP (Pool de Transacciones) es un intermediario inteligente entre el NCT y los workers. 
 # El NCT dice "minà este bloque", y el TrP se encarga de dividir ese trabajo, distribuirlo, y decidir si hay que cambiar de modo GPU a CPU.
@@ -38,46 +37,20 @@ channel.queue_declare(queue='tareas')        # TrP → Workers
 channel.queue_declare(queue='soluciones')
 
 # -------------------------
-# KUBERNETES
-# -------------------------
-
-try:
-    config.load_incluster_config()   # dentro del cluster
-except Exception:
-    config.load_kube_config()        # local para testing
-
-apps_v1 = client.AppsV1Api()
-
-CPU_DEPLOYMENT = "miners-cpu"
-CPU_NAMESPACE = "g-abc"
-
-# Funcion para escalar pods desde codigo, es equivalente a kubectl scale deployment miners-cpu --replicas=4,
-# por eso necesitaba el rbac.yaml, sin esos permisos K8s rechazaría esta llamada.
-def set_cpu_replicas(n: int):
-    """Escala el deployment de miners CPU vía patch."""
-    body = {"spec": {"replicas": n}}
-    apps_v1.patch_namespaced_deployment_scale(
-        name=CPU_DEPLOYMENT,
-        namespace=CPU_NAMESPACE,
-        body=body
-    )
-    print(f"[TrP] CPU miners escalados a {n}")
-
-# -------------------------
 # MONITOREO DE GPU
 # -------------------------
 
 FALLBACK_DIFFICULTY = "0"    # dificultad reducida para CPU
 ORIGINAL_DIFFICULTY_KEY = "difficulty_original"
 
-# Contamos los workers GPU activos
+# Verificamos si el gpu-server sigue vivo chequeando su heartbeat en Redis.
 def is_gpu_server_alive() -> bool:
     return r.exists("heartbeat:gpu-server") == 1
 
 
-# Esta funcion corre en background. Cada 15s revisa si hay GPU vivos.
-# Si no hay: reduce dificultad y escala CPU miners.
-# Si vuelven: restaura dificultad y baja CPU miners.
+# Esta funcion corre en background. Cada 15s revisa si el gpu-server sigue vivo.
+# Si no responde: reduce la dificultad y dispara el fallback CPU en la nube (GCP).
+# Si vuelve: restaura la dificultad y destruye las instancias CPU que ya no hacen falta.
 def monitor_loop():
     in_fallback = False
 
@@ -92,7 +65,13 @@ def monitor_loop():
                 r.set(ORIGINAL_DIFFICULTY_KEY, original)
             r.set("difficulty", FALLBACK_DIFFICULTY)
 
-            set_cpu_replicas(4)
+            # TODO (integración GCP): iniciar instancias CPU en la nube.
+            # Ej: disparar un Cloud Run Job vía la API de Google Cloud
+            # (google-cloud-run client) para que arranque N ejecuciones
+            # de worker_cpu.py. Cada ejecución consume de [tareas] igual
+            # que un worker normal, no necesita más coordinación desde acá.
+            # start_cpu_instances(n=4)
+
             in_fallback = True
 
         elif gpu_alive and in_fallback:
@@ -102,7 +81,13 @@ def monitor_loop():
             if original:
                 r.set("difficulty", original)
 
-            set_cpu_replicas(0)
+            # TODO (integración GCP): destruir/dejar de lanzar instancias CPU.
+            # Con Cloud Run Jobs no haría falta "apagar" nada explícitamente
+            # (cada ejecución termina sola), simplemente se deja de disparar
+            # nuevas ejecuciones. Si se usa otro mecanismo (VMs, etc.) acá
+            # iría la destrucción explícita de esos recursos.
+            # stop_cpu_instances()
+
             in_fallback = False
 
         time.sleep(15)

@@ -12,7 +12,6 @@ spec:
       labels:
         app: trp
     spec:
-      serviceAccountName: trp-sa
       containers:
       - name: trp
         image: bachi7/blockchain-trp:latest
