@@ -30,6 +30,8 @@ resource "google_container_node_pool" "infra" {
 
   node_config {
     machine_type = "e2-medium"
+    disk_type    = "pd-standard"
+    disk_size_gb = 50
 
     labels = {
       pool = "infra"
