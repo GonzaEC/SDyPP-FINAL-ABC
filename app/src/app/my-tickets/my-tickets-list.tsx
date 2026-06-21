@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { TicketQR } from "@/components/ticket-qr";
+import { ListingControl } from "./listing-control";
 
 interface TicketRow {
   ticketId: string;
@@ -13,8 +14,10 @@ interface TicketRow {
         datetime: Date;
         venue: string;
         imageUrl: string | null;
+        price: number;
       }
     | undefined;
+  activeListing: { id: string; price: number } | null;
 }
 
 export function MyTicketsList({
@@ -76,6 +79,14 @@ export function MyTicketsList({
                   Mostrá este QR en la puerta. Se renueva cada 30 segundos para evitar capturas.
                 </p>
               </div>
+            )}
+
+            {t.event && (
+              <ListingControl
+                ticketId={t.ticketId}
+                eventPrice={t.event.price}
+                activeListing={t.activeListing}
+              />
             )}
           </li>
         );

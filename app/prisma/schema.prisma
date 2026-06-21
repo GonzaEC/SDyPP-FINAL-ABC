@@ -16,9 +16,13 @@ model User {
   kdfSalt             String
   kdfIv               String
   role                String   @default("ATTENDEE")
+  displayName         String?
+  bio                 String?
   createdAt           DateTime @default(now())
 
-  events Event[] @relation("OrganizerEvents")
+  events   Event[]         @relation("OrganizerEvents")
+  payments Payment[]
+  listings TicketListing[] @relation("ListingSeller")
 }
 
 model Event {
@@ -32,13 +36,77 @@ model Event {
   imageUrl     String?
   price        Float
   ticketCount  Int
+  category     String   @default("OTHER")
   ncTBatchRef  String?
   status       String   @default("DRAFT")
   createdAt    DateTime @default(now())
 
-  tickets Ticket[]
+  tickets  Ticket[]
+  payments Payment[]
 
   @@index([organizerId])
+  @@index([status])
+  @@index([category])
+}
+
+// Operaciones disparadas al NCT (mock). Cada una nace pending, y un proceso
+// lazy (settleDueOperations) las pasa a confirmed o failed cuando llega su
+// scheduledConfirmAt. Simula el delay de minado y la chance de rechazo de la
+// BC real, así la UI tiene que manejar el estado intermedio desde ya.
+model NctOperation {
+  id                  String   @id @default(cuid())
+  type                String   // "mint_batch" | "transfer"
+  status              String   @default("PENDING") // PENDING | CONFIRMED | FAILED
+  // Datos para aplicar la operación cuando se confirme.
+  eventId             String?
+  organizerPublicKey  String?
+  ticketCount         Int?
+  ticketId            String?
+  fromPublicKey       String?
+  toPublicKey         String?
+  reason              String?  // purchase | validation | resale
+  // Metadata.
+  scheduledConfirmAt  DateTime
+  confirmedAt         DateTime?
+  failedAt            DateTime?
+  errorCode           String?
+  createdAt           DateTime @default(now())
+
+  @@index([status, scheduledConfirmAt])
+  @@index([eventId])
+  @@index([ticketId])
+}
+
+// Pagos vía MercadoPago. Cada Payment nace PENDING cuando creamos la
+// preferencia, y pasa a APPROVED/REJECTED/CANCELLED según lo que nos
+// notifique el webhook de MP. Al pasar a APPROVED se dispara la
+// transferencia NCT (submitTransfer) y se guarda la opRef resultante.
+model Payment {
+  id               String   @id @default(cuid())
+  userId           String
+  user             User     @relation(fields: [userId], references: [id])
+  eventId          String
+  event            Event    @relation(fields: [eventId], references: [id])
+  ticketId         String?  // se asigna al reservar el ticket antes de redirigir a MP
+  amount           Float
+  currency         String   @default("ARS")
+  status           String   @default("PENDING") // PENDING | APPROVED | REJECTED | CANCELLED | REFUNDED
+  // IDs de MercadoPago
+  mpPreferenceId   String?  @unique
+  mpPaymentId      String?  @unique
+  mpStatus         String?  // el status raw que devuelve MP (approved, rejected, in_process, etc.)
+  mpStatusDetail   String?
+  // Referencia a la operación NCT disparada al confirmar el pago
+  nctOpRef         String?
+  nctStatus        String?  // PENDING | CONFIRMED | FAILED
+  // Si está presente, este pago corresponde a una reventa P2P (ver ADR-017).
+  // El webhook dispara seller→buyer en lugar de organizer→buyer.
+  listingId        String?
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  @@index([userId])
+  @@index([eventId])
   @@index([status])
 }
 
@@ -53,8 +121,35 @@ model Ticket {
   ownerPublicKey  String   // pubkey del dueño actual
   mintedAt        DateTime @default(now())
   lastTransferAt  DateTime @default(now())
+  // Una entrada validada (consumida en puerta) no puede volver al pool de venta.
+  // Se setea en settleOne cuando confirma un transfer con reason=validation. Ver ADR-015.
+  validatedAt     DateTime?
+
+  listings TicketListing[]
 
   @@unique([eventId, ticketNumber])
   @@index([ownerPublicKey])
   @@index([eventId])
+}
+
+// Reventa peer-to-peer: un asistente lista su entrada para que otro la compre.
+// Ver ADR-017. Un ticket puede tener 0 o 1 listing ACTIVE; los SOLD/CANCELLED
+// quedan como historial.
+model TicketListing {
+  id          String    @id @default(cuid())
+  ticketId    String
+  ticket      Ticket    @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+  sellerId    String
+  seller      User      @relation("ListingSeller", fields: [sellerId], references: [id])
+  price       Float
+  currency    String    @default("ARS")
+  status      String    @default("ACTIVE") // ACTIVE | SOLD | CANCELLED
+  buyerId     String?
+  paymentId   String?
+  listedAt    DateTime  @default(now())
+  resolvedAt  DateTime?
+
+  @@index([ticketId, status])
+  @@index([sellerId])
+  @@index([status])
 }

@@ -1,11 +1,30 @@
 import { NextResponse } from "next/server";
-import { z } from "zod";
 import { prisma } from "@/lib/db";
 import { getSession } from "@/lib/session";
+import { EventInput, formatZodError } from "@/lib/validations/event";
+import { isValidCategory } from "@/lib/categories";
 
-export async function GET() {
+export async function GET(req: Request) {
+  const { searchParams } = new URL(req.url);
+  const q = searchParams.get("q")?.trim();
+  const category = searchParams.get("category")?.trim();
+
+  const where: Record<string, unknown> = {
+    status: { in: ["PUBLISHED", "EMITTED"] },
+  };
+  if (q) {
+    where.OR = [
+      { name: { contains: q, mode: "insensitive" } },
+      { venue: { contains: q, mode: "insensitive" } },
+      { description: { contains: q, mode: "insensitive" } },
+    ];
+  }
+  if (category && isValidCategory(category)) {
+    where.category = category;
+  }
+
   const events = await prisma.event.findMany({
-    where: { status: { in: ["PUBLISHED", "EMITTED"] } },
+    where,
     orderBy: { datetime: "asc" },
     select: {
       id: true,
@@ -16,30 +35,24 @@ export async function GET() {
       imageUrl: true,
       price: true,
       ticketCount: true,
+      category: true,
       status: true,
     },
   });
   return NextResponse.json({ events });
 }
 
-const Body = z.object({
-  name: z.string().min(1).max(120),
-  description: z.string().max(2000).default(""),
-  datetime: z.string().refine((v) => !Number.isNaN(Date.parse(v)), "invalid_date"),
-  venue: z.string().min(1).max(200),
-  imageUrl: z.string().url().optional().or(z.literal("").transform(() => undefined)),
-  price: z.number().nonnegative(),
-  ticketCount: z.number().int().positive().max(100_000),
-});
-
 export async function POST(req: Request) {
   const session = await getSession();
   if (!session.userId || session.role !== "ORGANIZER") {
-    return NextResponse.json({ error: "forbidden" }, { status: 403 });
+    return NextResponse.json({ error: "forbidden", message: "Solo organizadores pueden crear eventos." }, { status: 403 });
   }
-  const parsed = Body.safeParse(await req.json().catch(() => null));
+  const parsed = EventInput.safeParse(await req.json().catch(() => null));
   if (!parsed.success) {
-    return NextResponse.json({ error: "invalid_body", details: parsed.error.flatten() }, { status: 400 });
+    return NextResponse.json(
+      { error: "invalid_body", message: formatZodError(parsed.error), details: parsed.error.flatten() },
+      { status: 400 },
+    );
   }
   const data = parsed.data;
   const event = await prisma.event.create({
@@ -52,6 +65,7 @@ export async function POST(req: Request) {
       imageUrl: data.imageUrl,
       price: data.price,
       ticketCount: data.ticketCount,
+      category: data.category,
       status: "DRAFT",
     },
   });

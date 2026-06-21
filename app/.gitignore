@@ -47,3 +47,8 @@ AGENTS.md
 .claude
 
 docs/oculto
+
+# playwright
+/test-results/
+/playwright-report/
+/playwright/.cache/

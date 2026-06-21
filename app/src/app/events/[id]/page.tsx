@@ -3,7 +3,9 @@ import { notFound } from "next/navigation";
 import { prisma } from "@/lib/db";
 import { PaseMockup } from "@/components/pase-mockup";
 import { getSession } from "@/lib/session";
+import { getDisplayName, getInitials } from "@/lib/display-name";
 import { BuyButton } from "./buy-button";
+import { ResaleSection } from "./resale-section";
 
 export const dynamic = "force-dynamic";
 
@@ -11,9 +13,16 @@ export default async function EventDetail({ params }: { params: Promise<{ id: st
   const { id } = await params;
   const event = await prisma.event.findUnique({
     where: { id },
-    include: { organizer: { select: { publicKey: true } } },
+    include: {
+      organizer: {
+        select: { id: true, email: true, displayName: true, publicKey: true },
+      },
+    },
   });
   if (!event) notFound();
+
+  const organizerName = getDisplayName(event.organizer);
+  const organizerInitials = getInitials(organizerName);
 
   const session = await getSession();
   const date = new Date(event.datetime);
@@ -87,6 +96,35 @@ export default async function EventDetail({ params }: { params: Promise<{ id: st
             </div>
           )}
 
+          <Link
+            href={`/organizers/${event.organizer.id}`}
+            className="card p-4 sm:p-5 flex items-center gap-4 hover:shadow-[var(--shadow)] transition-all duration-200 group"
+          >
+            <div
+              className="flex-shrink-0 w-12 h-12 rounded-xl grid place-items-center text-[16px] font-semibold"
+              style={{ background: "var(--brand-soft)", color: "var(--brand)" }}
+            >
+              {organizerInitials}
+            </div>
+            <div className="flex-1 min-w-0">
+              <p className="text-[11px] font-semibold text-[var(--muted)] uppercase tracking-wider">
+                Organizado por
+              </p>
+              <p className="text-[15px] font-semibold mt-0.5 group-hover:text-[var(--brand)] transition-colors truncate">
+                {organizerName}
+              </p>
+            </div>
+            <svg
+              width="18"
+              height="18"
+              viewBox="0 0 24 24"
+              fill="none"
+              className="flex-shrink-0 text-[var(--muted)] group-hover:text-[var(--brand)] transition-colors"
+            >
+              <path d="M9 6l6 6-6 6" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+            </svg>
+          </Link>
+
           <div className="card p-5 sm:p-6 space-y-4">
             <h2 className="text-[15px] sm:text-[16px] font-semibold">Cómo funciona tu pase</h2>
             <ol className="space-y-3 text-[13px] sm:text-[14px] text-[var(--ink-2)]">
@@ -138,6 +176,14 @@ export default async function EventDetail({ params }: { params: Promise<{ id: st
               </p>
             )}
           </div>
+
+          {isEmitted && (
+            <ResaleSection
+              eventId={event.id}
+              viewerPublicKey={session.publicKey ?? null}
+              viewerLoggedIn={Boolean(session.userId)}
+            />
+          )}
 
           <div className="card p-5 sm:p-6 space-y-3">
             <p className="text-[13px] font-semibold text-[var(--muted)] uppercase tracking-wider">

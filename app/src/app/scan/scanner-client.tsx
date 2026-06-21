@@ -2,8 +2,16 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Html5Qrcode } from "html5-qrcode";
+import { useOperationStatus } from "@/lib/use-operation-status";
 
 type Result =
+  | {
+      kind: "pending";
+      opRef: string;
+      ticketNumber: number;
+      eventName: string;
+      venue: string;
+    }
   | { kind: "ok"; ticketNumber: number; eventName: string; venue: string }
   | { kind: "error"; code: string; message: string };
 
@@ -33,7 +41,7 @@ export function ScannerClient() {
           body: JSON.stringify(parsed),
         });
         const body = await res.json();
-        if (!res.ok) {
+        if (!res.ok && res.status !== 202) {
           setResult({
             kind: "error",
             code: body.error ?? "unknown",
@@ -41,13 +49,15 @@ export function ScannerClient() {
           });
           beep("error");
         } else {
+          // 202 Accepted: la op está PENDING en el NCT. Mostramos overlay
+          // azul "Validando…" y poleamos hasta CONFIRMED/FAILED.
           setResult({
-            kind: "ok",
+            kind: "pending",
+            opRef: body.opRef,
             ticketNumber: body.ticket.ticketNumber,
             eventName: body.ticket.eventName,
             venue: body.ticket.venue,
           });
-          beep("ok");
         }
       } catch (err) {
         setResult({
@@ -58,7 +68,6 @@ export function ScannerClient() {
         beep("error");
       } finally {
         setBusy(false);
-        // Liberar el lock después de un ratito para permitir reescanear.
         setTimeout(() => {
           lastSubmittedRef.current = null;
         }, 2000);
@@ -155,16 +164,23 @@ export function ScannerClient() {
             </div>
           )}
 
-          {busy && (
+          {busy && !result && (
             <div className="absolute inset-0 bg-black/60 flex flex-col items-center justify-center gap-3 text-white">
               <span className="spinner" style={{ width: 28, height: 28 }} />
-              <p className="text-[14px] font-semibold">Validando…</p>
+              <p className="text-[14px] font-semibold">Verificando…</p>
             </div>
           )}
 
-          {/* Overlay grande de resultado — encima de la cámara, ocupa todo el visor */}
+          {/* Overlay grande de resultado / pending — ocupa todo el visor */}
           {result && (
-            <ResultOverlay result={result} onClose={() => setResult(null)} />
+            <ResultOverlay
+              result={result}
+              onTerminal={(next) => {
+                setResult(next);
+                beep(next.kind === "ok" ? "ok" : "error");
+              }}
+              onClose={() => setResult(null)}
+            />
           )}
         </div>
 
@@ -199,15 +215,70 @@ export function ScannerClient() {
   );
 }
 
-function ResultOverlay({ result, onClose }: { result: Result; onClose: () => void }) {
-  // Auto-dismiss para permitir escanear el siguiente sin tocar nada.
+function ResultOverlay({
+  result,
+  onTerminal,
+  onClose,
+}: {
+  result: Result;
+  onTerminal: (next: Result) => void;
+  onClose: () => void;
+}) {
+  const isPending = result.kind === "pending";
+  // Polea cuando estamos pending; null en otros estados deshabilita el hook.
+  const op = useOperationStatus(isPending ? result.opRef : null);
+
+  // Transicionar pending → ok/error cuando el polling termina.
   useEffect(() => {
+    if (result.kind !== "pending" || !op) return;
+    if (op.status === "CONFIRMED") {
+      onTerminal({
+        kind: "ok",
+        ticketNumber: result.ticketNumber,
+        eventName: result.eventName,
+        venue: result.venue,
+      });
+    } else if (op.status === "FAILED") {
+      onTerminal({
+        kind: "error",
+        code: op.errorCode ?? "transfer_failed",
+        message: translateError(op.errorCode),
+      });
+    }
+  }, [op, result, onTerminal]);
+
+  // Auto-dismiss solo para resultados terminales.
+  useEffect(() => {
+    if (result.kind === "pending") return;
     const t = setTimeout(onClose, result.kind === "ok" ? 3500 : 4500);
     return () => clearTimeout(t);
   }, [result, onClose]);
 
+  if (result.kind === "pending") {
+    return (
+      <div
+        className="absolute inset-0 flex flex-col items-center justify-center gap-4 text-white text-center px-6"
+        style={{ background: "#0a3aff" }}
+      >
+        <div className="rounded-full p-5" style={{ background: "rgba(255,255,255,0.18)" }}>
+          <span className="spinner" style={{ width: 56, height: 56, borderWidth: 5 }} />
+        </div>
+        <p className="text-[24px] font-bold leading-tight">Validando on-chain…</p>
+        <div className="space-y-0.5">
+          <p className="text-[16px] font-semibold">Pase #{result.ticketNumber}</p>
+          <p className="text-[14px]" style={{ color: "#bbd0ff" }}>
+            {result.eventName}
+          </p>
+        </div>
+        <p className="text-[12px] opacity-75 mt-2">
+          Esperando que el NCT mine el bloque…
+        </p>
+      </div>
+    );
+  }
+
   const isOk = result.kind === "ok";
-  const bg = isOk ? "#16a34a" : "#dc2626"; // verde / rojo intensos
+  const bg = isOk ? "#16a34a" : "#dc2626";
   const accent = isOk ? "#bbf7d0" : "#fecaca";
 
   return (
@@ -217,7 +288,6 @@ function ResultOverlay({ result, onClose }: { result: Result; onClose: () => voi
       className="absolute inset-0 flex flex-col items-center justify-center gap-4 text-white text-center px-6 cursor-pointer"
       style={{ background: bg }}
     >
-      {/* Ícono enorme */}
       <div className="rounded-full p-5" style={{ background: "rgba(255,255,255,0.18)" }}>
         {isOk ? (
           <svg width="80" height="80" viewBox="0 0 24 24" fill="none">
@@ -231,12 +301,7 @@ function ResultOverlay({ result, onClose }: { result: Result; onClose: () => voi
           </svg>
         ) : (
           <svg width="80" height="80" viewBox="0 0 24 24" fill="none">
-            <path
-              d="M6 6l12 12M18 6l-12 12"
-              stroke="white"
-              strokeWidth="3"
-              strokeLinecap="round"
-            />
+            <path d="M6 6l12 12M18 6l-12 12" stroke="white" strokeWidth="3" strokeLinecap="round" />
           </svg>
         )}
       </div>
@@ -279,12 +344,12 @@ function beep(kind: "ok" | "error") {
     gain.connect(ctx.destination);
     osc.type = "sine";
     if (kind === "ok") {
-      osc.frequency.value = 880; // A5
+      osc.frequency.value = 880;
       gain.gain.setValueAtTime(0.12, ctx.currentTime);
       osc.start();
       osc.stop(ctx.currentTime + 0.15);
     } else {
-      osc.frequency.value = 220; // A3
+      osc.frequency.value = 220;
       gain.gain.setValueAtTime(0.16, ctx.currentTime);
       osc.start();
       osc.stop(ctx.currentTime + 0.35);
@@ -328,11 +393,17 @@ function translateError(code: string | undefined): string {
     case "not_event_organizer":
       return "No sos el organizador del evento de esta entrada.";
     case "not_current_owner":
+    case "not_current_owner_at_settlement":
       return "La entrada ya fue usada o transferida a otro dueño.";
     case "parse_error":
       return "No pude leer el QR.";
     case "camera_failed":
       return "No pude abrir la cámara. Permisos del navegador?";
+    case "mock_random_failure":
+      return "El NCT rechazó la transacción. Pedile al asistente que abra de nuevo.";
+    case "timeout_waiting_settlement":
+    case "network_timeout":
+      return "El NCT está tardando demasiado. Probá de nuevo.";
     default:
       return code ?? "Error desconocido.";
   }

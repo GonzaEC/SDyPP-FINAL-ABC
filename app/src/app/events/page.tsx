@@ -1,13 +1,42 @@
 import Link from "next/link";
 import { prisma } from "@/lib/db";
+import { isValidCategory, getCategory } from "@/lib/categories";
+import { EventsFilters } from "./events-filters";
 
 export const dynamic = "force-dynamic";
 
-export default async function EventsPage() {
+interface SearchParams {
+  q?: string;
+  category?: string;
+}
+
+export default async function EventsPage({
+  searchParams,
+}: {
+  searchParams: Promise<SearchParams>;
+}) {
+  const { q, category } = await searchParams;
+
+  const where: Record<string, unknown> = {
+    status: { in: ["PUBLISHED", "EMITTED"] },
+  };
+  if (q?.trim()) {
+    where.OR = [
+      { name: { contains: q.trim(), mode: "insensitive" } },
+      { venue: { contains: q.trim(), mode: "insensitive" } },
+      { description: { contains: q.trim(), mode: "insensitive" } },
+    ];
+  }
+  if (category && isValidCategory(category)) {
+    where.category = category;
+  }
+
   const events = await prisma.event.findMany({
-    where: { status: { in: ["PUBLISHED", "EMITTED"] } },
+    where,
     orderBy: { datetime: "asc" },
   });
+
+  const hasFilters = Boolean(q?.trim() || category);
 
   return (
     <div className="mx-auto max-w-6xl w-full px-4 sm:px-6 py-10 sm:py-14 space-y-8 sm:space-y-10">
@@ -21,6 +50,8 @@ export default async function EventsPage() {
         </p>
       </header>
 
+      <EventsFilters />
+
       {events.length === 0 ? (
         <div className="card p-16 text-center">
           <div
@@ -32,13 +63,21 @@ export default async function EventsPage() {
               <path d="M8 3v4M16 3v4M3 11h18" stroke="var(--muted)" strokeWidth="1.6" strokeLinecap="round" />
             </svg>
           </div>
-          <h3 className="text-[22px] font-semibold mb-2">Sin eventos por ahora</h3>
-          <p className="text-[14px] text-[var(--muted)]">Volvé pronto, algo se viene.</p>
+          <h3 className="text-[22px] font-semibold mb-2">
+            {hasFilters ? "Sin resultados" : "Sin eventos por ahora"}
+          </h3>
+          <p className="text-[14px] text-[var(--muted)]">
+            {hasFilters
+              ? "Probá con otros términos o limpiá los filtros."
+              : "Volvé pronto, algo se viene."}
+          </p>
         </div>
       ) : (
         <ul className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-5">
           {events.map((e, i) => {
             const d = new Date(e.datetime);
+            const cat = getCategory(e.category);
+            const CatIcon = cat.Icon;
             return (
               <li key={e.id} className={`rise rise-${(i % 5) + 1}`}>
                 <Link
@@ -65,11 +104,20 @@ export default async function EventsPage() {
                           {d.toLocaleDateString("es-AR", { day: "2-digit" })}
                         </span>
                       </div>
-                      {e.status === "EMITTED" && (
-                        <span className="badge is-success" style={{ background: "rgba(255,255,255,0.95)" }}>
-                          On-chain
+                      <div className="flex flex-col items-end gap-1.5">
+                        {e.status === "EMITTED" && (
+                          <span className="badge is-success" style={{ background: "rgba(255,255,255,0.95)" }}>
+                            On-chain
+                          </span>
+                        )}
+                        <span
+                          className="inline-flex items-center gap-1 text-[11px] font-medium px-2 py-1 rounded-full bg-white/95 backdrop-blur"
+                          style={{ color: "var(--ink)" }}
+                        >
+                          <CatIcon size={12} strokeWidth={2.2} />
+                          {cat.label}
                         </span>
-                      )}
+                      </div>
                     </div>
                   </div>
                   <div className="p-5">

@@ -25,9 +25,14 @@ export async function POST(_req: Request, { params }: { params: Promise<{ id: st
     return NextResponse.json({ error: "cannot_buy_own_event" }, { status: 400 });
   }
 
-  // Buscar una entrada que siga siendo del organizador (no vendida).
+  // Buscar una entrada que siga siendo del organizador (no vendida) y que
+  // no haya sido validada antes (ADR-015: validada = terminal, no re-vendible).
   const available = await prisma.ticket.findFirst({
-    where: { eventId, ownerPublicKey: event.organizer.publicKey },
+    where: {
+      eventId,
+      ownerPublicKey: event.organizer.publicKey,
+      validatedAt: null,
+    },
     orderBy: { ticketNumber: "asc" },
   });
   if (!available) {
@@ -37,6 +42,11 @@ export async function POST(_req: Request, { params }: { params: Promise<{ id: st
   // Disparar la transferencia (escribe la nueva propiedad en la tabla Ticket via mock).
   // El payload firmado lo dejamos vacío en el mock; cuando integremos el NCT real, el
   // organizador tendrá que firmar (o haber pre-firmado) un permiso de venta.
+  // Despachamos la transferencia y devolvemos 202 Accepted con el opRef.
+  // El cliente polea /api/operations/[opRef] hasta que termine (Sprint 4b).
+  // Devolvemos el ticket "tentativo" (id + número) ya — si la op falla, la
+  // UI lo descarta. Es OK exponer el número porque ya está "reservado" en la
+  // intención de transfer.
   const result = await submitTransfer({
     ticketId: available.id,
     fromPublicKey: event.organizer.publicKey,
@@ -46,12 +56,17 @@ export async function POST(_req: Request, { params }: { params: Promise<{ id: st
     signature: "mock-signature-pending-organizer-key-delegation",
   });
 
-  return NextResponse.json({
-    ticket: {
-      id: available.id,
-      eventId,
-      ticketNumber: available.ticketNumber,
+  return NextResponse.json(
+    {
+      opRef: result.opRef,
+      status: result.status, // "PENDING" en el mock
+      estimatedConfirmAt: result.estimatedConfirmAt,
+      ticket: {
+        id: available.id,
+        eventId,
+        ticketNumber: available.ticketNumber,
+      },
     },
-    tx: result,
-  });
+    { status: 202 },
+  );
 }

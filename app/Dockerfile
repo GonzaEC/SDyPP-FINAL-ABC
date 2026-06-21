@@ -6,6 +6,13 @@ RUN npm ci
 
 FROM node:22-alpine AS builder
 WORKDIR /app
+# NEXT_PUBLIC_* vars son inlineadas en build time por Next.js, por eso las
+# recibimos como build args. Si quedan vacías, el código las detecta y
+# muestra el fallback de input de URL en lugar del uploader.
+ARG NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME=""
+ARG NEXT_PUBLIC_CLOUDINARY_UPLOAD_PRESET=""
+ENV NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME=$NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME
+ENV NEXT_PUBLIC_CLOUDINARY_UPLOAD_PRESET=$NEXT_PUBLIC_CLOUDINARY_UPLOAD_PRESET
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
 RUN npx prisma generate

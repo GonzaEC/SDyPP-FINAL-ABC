@@ -26,6 +26,9 @@ Las ADRs son cortas, inmutables (no se editan, se reemplazan), y se numeran en o
 | [012](012-tls-donde-cruza-internet.md) | TLS solo donde cruza redes no controladas | Accepted |
 | [013](013-deploy-docker-compose.md) | Deploy con Docker Compose, no Vercel | Accepted |
 | [014](014-qr-rotativo.md) | QR del asistente firmado con timestamp, rota cada 30s | Accepted |
+| [015](015-reventa-entradas-validadas.md) | Reventa de entradas validadas | Accepted |
+| [016](016-integracion-mercadopago.md) | Integración con MercadoPago (Checkout Pro) | Accepted |
+| [017](017-reventa-p2p.md) | Reventa peer-to-peer entre asistentes (mock) | Accepted |
 
 ## Cómo escribir una nueva
 

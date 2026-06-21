@@ -31,15 +31,27 @@ export default async function MyTicketsPage() {
   const eventIds = [...new Set(ownership.map((o) => o.eventId))];
   const events = await prisma.event.findMany({
     where: { id: { in: eventIds } },
-    select: { id: true, name: true, datetime: true, venue: true, imageUrl: true },
+    select: { id: true, name: true, datetime: true, venue: true, imageUrl: true, price: true },
   });
   const eventById = new Map(events.map((e) => [e.id, e]));
 
-  const tickets = ownership.map((o) => ({
-    ticketId: o.ticketId,
-    ticketNumber: o.ticketNumber,
-    event: eventById.get(o.eventId),
-  }));
+  // Listings activos del usuario para cada ticket (si lo está vendiendo).
+  const ticketIds = ownership.map((o) => o.ticketId);
+  const activeListings = await prisma.ticketListing.findMany({
+    where: { ticketId: { in: ticketIds }, status: "ACTIVE" },
+    select: { id: true, ticketId: true, price: true },
+  });
+  const listingByTicket = new Map(activeListings.map((l) => [l.ticketId, l]));
+
+  const tickets = ownership.map((o) => {
+    const listing = listingByTicket.get(o.ticketId);
+    return {
+      ticketId: o.ticketId,
+      ticketNumber: o.ticketNumber,
+      event: eventById.get(o.eventId),
+      activeListing: listing ? { id: listing.id, price: listing.price } : null,
+    };
+  });
 
   return (
     <div className="mx-auto max-w-4xl w-full px-4 sm:px-6 py-10 sm:py-14 space-y-8">

@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { signPayload } from "@/lib/crypto/client";
 import { getUnlockedKey } from "@/lib/identity-store";
+import { UnlockKeyModal } from "@/components/unlock-key-modal";
 
 type Stage = "idle" | "preparing" | "signing" | "submitting";
 
@@ -11,15 +12,17 @@ export function EmitButton({ eventId }: { eventId: string }) {
   const router = useRouter();
   const [stage, setStage] = useState<Stage>("idle");
   const [error, setError] = useState<string | null>(null);
+  const [unlockOpen, setUnlockOpen] = useState(false);
 
   const loading = stage !== "idle";
 
-  async function handleEmit() {
+  async function runEmit() {
     setError(null);
     try {
       const key = getUnlockedKey();
       if (!key) {
-        throw new Error("Clave bloqueada. Cerrá sesión e ingresá de nuevo para desbloquearla.");
+        setUnlockOpen(true);
+        return;
       }
       setStage("preparing");
       const prep = await fetch(`/api/events/${eventId}/emit/prepare`, { method: "POST" });
@@ -52,12 +55,24 @@ export function EmitButton({ eventId }: { eventId: string }) {
   };
 
   return (
-    <div className="flex flex-col items-end gap-1.5">
-      <button onClick={handleEmit} disabled={loading} className="btn btn-primary btn-sm">
-        {loading && <span className="spinner" />}
-        {copy[stage]}
-      </button>
-      {error && <p className="text-[11px] text-[var(--danger)] max-w-[240px] text-right">{error}</p>}
-    </div>
+    <>
+      <div className="flex flex-col items-end gap-1.5">
+        <button onClick={runEmit} disabled={loading} className="btn btn-primary btn-sm">
+          {loading && <span className="spinner" />}
+          {copy[stage]}
+        </button>
+        {error && (
+          <p className="text-[11px] text-[var(--danger)] max-w-[240px] text-right">{error}</p>
+        )}
+      </div>
+      <UnlockKeyModal
+        open={unlockOpen}
+        onClose={() => setUnlockOpen(false)}
+        onUnlocked={() => {
+          // Re-disparar la emisión automáticamente tras desbloquear.
+          runEmit();
+        }}
+      />
+    </>
   );
 }

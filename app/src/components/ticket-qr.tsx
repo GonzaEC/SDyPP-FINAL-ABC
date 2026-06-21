@@ -1,9 +1,10 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import QRCode from "qrcode";
 import { signPayload } from "@/lib/crypto/client";
 import { getUnlockedKey } from "@/lib/identity-store";
+import { UnlockKeyModal } from "./unlock-key-modal";
 
 interface Props {
   ticketId: string;
@@ -22,58 +23,58 @@ interface QRPayload {
 
 export function TicketQR({ ticketId, publicKey, size = 320, refreshMs = 30_000 }: Props) {
   const [dataUrl, setDataUrl] = useState<string | null>(null);
+  const [locked, setLocked] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [issuedAt, setIssuedAt] = useState<string | null>(null);
   const [fullscreen, setFullscreen] = useState(false);
+  const [unlockOpen, setUnlockOpen] = useState(false);
+  const [tick, setTick] = useState(0); // se usa para forzar regeneración tras desbloquear
+
+  const generate = useCallback(async () => {
+    setError(null);
+    const key = getUnlockedKey();
+    if (!key) {
+      setLocked(true);
+      setDataUrl(null);
+      return;
+    }
+    setLocked(false);
+    try {
+      const payload: QRPayload = {
+        v: 1,
+        type: "ticket_proof",
+        ticketId,
+        publicKey,
+        issuedAt: new Date().toISOString(),
+      };
+      const signature = await signPayload(key, payload);
+      const encoded = JSON.stringify({ payload, signature });
+      const url = await QRCode.toDataURL(encoded, {
+        width: 520,
+        margin: 2,
+        errorCorrectionLevel: "M",
+        color: { dark: "#0a0a0a", light: "#ffffff" },
+      });
+      setDataUrl(url);
+      setIssuedAt(payload.issuedAt);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "qr_generation_failed");
+    }
+  }, [ticketId, publicKey]);
 
   useEffect(() => {
     let cancelled = false;
-
-    async function generate() {
-      setError(null);
-      try {
-        const key = getUnlockedKey();
-        if (!key) {
-          setError("Clave bloqueada. Salí e ingresá de nuevo para firmar el QR.");
-          setDataUrl(null);
-          return;
-        }
-        const payload: QRPayload = {
-          v: 1,
-          type: "ticket_proof",
-          ticketId,
-          publicKey,
-          issuedAt: new Date().toISOString(),
-        };
-        const signature = await signPayload(key, payload);
-        const encoded = JSON.stringify({ payload, signature });
-
-        // Renderizamos a un tamaño grande (520) y dejamos que la UI lo escale.
-        // QRs grandes se escanean mucho más rápido y desde más lejos.
-        const url = await QRCode.toDataURL(encoded, {
-          width: 520,
-          margin: 2,
-          errorCorrectionLevel: "M",
-          color: { dark: "#0a0a0a", light: "#ffffff" },
-        });
-        if (!cancelled) {
-          setDataUrl(url);
-          setIssuedAt(payload.issuedAt);
-        }
-      } catch (err) {
-        if (!cancelled) {
-          setError(err instanceof Error ? err.message : "qr_generation_failed");
-        }
-      }
-    }
-
-    generate();
-    const interval = setInterval(generate, refreshMs);
+    let interval: ReturnType<typeof setInterval> | null = null;
+    (async () => {
+      await generate();
+      if (cancelled) return;
+      interval = setInterval(generate, refreshMs);
+    })();
     return () => {
       cancelled = true;
-      clearInterval(interval);
+      if (interval) clearInterval(interval);
     };
-  }, [ticketId, publicKey, refreshMs]);
+  }, [generate, refreshMs, tick]);
 
   // ESC para cerrar fullscreen.
   useEffect(() => {
@@ -93,6 +94,42 @@ export function TicketQR({ ticketId, publicKey, size = 320, refreshMs = 30_000 }
       >
         {error}
       </div>
+    );
+  }
+
+  if (locked) {
+    return (
+      <>
+        <div
+          style={{ width: size, height: size }}
+          className="flex flex-col items-center justify-center gap-3 text-center bg-[var(--paper-2)] rounded-lg p-5"
+        >
+          <div
+            className="w-12 h-12 rounded-xl grid place-items-center"
+            style={{ background: "var(--brand-soft)", color: "var(--brand)" }}
+          >
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none">
+              <rect x="4" y="10" width="16" height="10" rx="2" stroke="currentColor" strokeWidth="1.8" />
+              <path d="M8 10V7a4 4 0 0 1 8 0v3" stroke="currentColor" strokeWidth="1.8" />
+            </svg>
+          </div>
+          <p className="text-[13px] text-[var(--muted)] max-w-[220px] leading-snug">
+            Tu clave está bloqueada. Desbloqueala con tu contraseña para mostrar el QR.
+          </p>
+          <button
+            type="button"
+            onClick={() => setUnlockOpen(true)}
+            className="btn btn-primary btn-sm"
+          >
+            Desbloquear
+          </button>
+        </div>
+        <UnlockKeyModal
+          open={unlockOpen}
+          onClose={() => setUnlockOpen(false)}
+          onUnlocked={() => setTick((t) => t + 1)}
+        />
+      </>
     );
   }
 

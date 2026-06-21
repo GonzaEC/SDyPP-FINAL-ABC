@@ -2,7 +2,10 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { prisma } from "@/lib/db";
 import { getSession } from "@/lib/session";
+import { settleDueOperations } from "@/lib/nct/client";
 import { EmitButton } from "./emit-button";
+import { EventActions } from "./event-actions";
+import { MintingPoller } from "./minting-poller";
 
 export const dynamic = "force-dynamic";
 
@@ -11,16 +14,22 @@ export default async function DashboardPage() {
   if (!session.userId) redirect("/login");
   if (session.role !== "ORGANIZER") redirect("/events");
 
+  // Settle cualquier operación que ya esté lista para confirmarse antes de leer.
+  await settleDueOperations();
+
   const events = await prisma.event.findMany({
     where: { organizerId: session.userId },
     orderBy: { createdAt: "desc" },
   });
+
+  const minting = events.filter((e) => e.status === "MINTING").map((e) => ({ id: e.id, opRef: e.ncTBatchRef }));
 
   const emitted = events.filter((e) => e.status === "EMITTED").length;
   const totalTickets = events.reduce((acc, e) => acc + e.ticketCount, 0);
 
   return (
     <div className="mx-auto max-w-6xl w-full px-4 sm:px-6 py-10 sm:py-14 space-y-8 sm:space-y-10">
+      <MintingPoller operations={minting} />
       <header className="flex flex-wrap items-end justify-between gap-4 sm:gap-6">
         <div className="space-y-2 flex-1 min-w-[200px]">
           <p className="eyebrow">Panel del organizador</p>
@@ -31,12 +40,21 @@ export default async function DashboardPage() {
             Creá un evento, firmalo con tu clave y emitilo a la blockchain.
           </p>
         </div>
-        <Link href="/dashboard/events/new" className="btn btn-primary w-full sm:w-auto">
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
-            <path d="M12 5v14M5 12h14" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" />
-          </svg>
-          Nuevo evento
-        </Link>
+        <div className="flex flex-col sm:flex-row gap-2.5 w-full sm:w-auto">
+          <Link href="/dashboard/profile" className="btn btn-secondary w-full sm:w-auto">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
+              <circle cx="12" cy="8" r="4" stroke="currentColor" strokeWidth="2" />
+              <path d="M4 21c0-4 4-7 8-7s8 3 8 7" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+            </svg>
+            Mi perfil
+          </Link>
+          <Link href="/dashboard/events/new" className="btn btn-primary w-full sm:w-auto">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
+              <path d="M12 5v14M5 12h14" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" />
+            </svg>
+            Nuevo evento
+          </Link>
+        </div>
       </header>
 
       <section className="grid grid-cols-3 gap-3 sm:gap-4">
@@ -112,10 +130,35 @@ export default async function DashboardPage() {
                         <span
                           className={
                             "badge flex-shrink-0 " +
-                            (e.status === "EMITTED" ? "is-success" : e.status === "DRAFT" ? "is-warn" : "")
+                            (e.status === "EMITTED"
+                              ? "is-success"
+                              : e.status === "DRAFT"
+                                ? "is-warn"
+                                : "")
+                          }
+                          style={
+                            e.status === "CANCELLED"
+                              ? { color: "var(--danger)", background: "var(--danger-soft)" }
+                              : e.status === "MINTING"
+                                ? { color: "var(--brand)", background: "var(--brand-soft)" }
+                                : undefined
                           }
                         >
-                          {e.status === "EMITTED" ? "Emitido" : e.status === "DRAFT" ? "Borrador" : e.status}
+                          {e.status === "MINTING" && (
+                            <span
+                              className="spinner"
+                              style={{ width: 9, height: 9, borderColor: "var(--brand)", borderRightColor: "transparent", marginRight: 5 }}
+                            />
+                          )}
+                          {e.status === "EMITTED"
+                            ? "Emitido"
+                            : e.status === "DRAFT"
+                              ? "Borrador"
+                              : e.status === "MINTING"
+                                ? "Minteando…"
+                                : e.status === "CANCELLED"
+                                  ? "Cancelado"
+                                  : e.status}
                         </span>
                       </div>
                       <p className="text-[12px] sm:text-[13px] text-[var(--muted)] truncate">
@@ -133,11 +176,15 @@ export default async function DashboardPage() {
                     </div>
                   </div>
 
-                  {e.status !== "EMITTED" && (
-                    <div className="flex justify-end pt-3 mt-3 border-t border-[var(--line)]">
-                      <EmitButton eventId={e.id} />
-                    </div>
-                  )}
+                  <div className="flex flex-wrap items-start justify-between gap-3 pt-3 mt-3 border-t border-[var(--line)]">
+                    <EventActions eventId={e.id} status={e.status} />
+                    {e.status === "DRAFT" && <EmitButton eventId={e.id} />}
+                    {e.status === "MINTING" && (
+                      <p className="text-[12px] text-[var(--muted)] italic max-w-xs">
+                        Esperando que el NCT confirme el lote… esta vista se refresca sola.
+                      </p>
+                    )}
+                  </div>
                 </li>
               );
             })}

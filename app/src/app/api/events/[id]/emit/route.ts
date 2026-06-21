@@ -34,8 +34,11 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
   if (event.organizerId !== session.userId) {
     return NextResponse.json({ error: "forbidden" }, { status: 403 });
   }
-  if (event.status === "EMITTED") {
-    return NextResponse.json({ error: "already_emitted" }, { status: 409 });
+  if (event.status === "EMITTED" || event.status === "MINTING") {
+    return NextResponse.json(
+      { error: event.status === "EMITTED" ? "already_emitted" : "already_minting" },
+      { status: 409 },
+    );
   }
   if (
     payload.eventId !== event.id ||
@@ -48,6 +51,10 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
   const valid = await verifySignature(session.publicKey, payload, signature);
   if (!valid) return NextResponse.json({ error: "invalid_signature" }, { status: 400 });
 
+  // 1. Marcar evento como MINTING para que la UI muestre el estado intermedio.
+  // 2. Despachar la operación al mock/NCT real (devuelve PENDING + opRef).
+  // El status del evento pasa a EMITTED cuando la op se confirme (la propia
+  // operación settle hace el update).
   const result = await submitMintBatch({
     eventId: event.id,
     organizerPublicKey: session.publicKey,
@@ -58,7 +65,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
 
   const updated = await prisma.event.update({
     where: { id: event.id },
-    data: { status: "EMITTED", ncTBatchRef: result.batchRef },
+    data: { status: "MINTING", ncTBatchRef: result.opRef },
   });
 
   return NextResponse.json({ event: updated, nct: result });

@@ -94,6 +94,10 @@ export async function POST(req: Request) {
 
   // 6. Disparar la transferencia de vuelta al organizador.
   // En el modelo, esto "invalida" el QR porque el dueño cambia (ver ADR-005).
+  // Despachamos la transferencia y devolvemos 202 Accepted con el opRef.
+  // El validador polea /api/operations/[opRef] hasta que termine (Sprint 4b).
+  // Hasta que confirme, el "acceso autorizado" no se garantiza — la UI muestra
+  // estado "Validando on-chain…" y solo después de CONFIRMED muestra el ✓.
   const tx = await submitTransfer({
     ticketId: ticket.id,
     fromPublicKey: payload.publicKey,
@@ -103,15 +107,19 @@ export async function POST(req: Request) {
     signature,
   });
 
-  return NextResponse.json({
-    ok: true,
-    ticket: {
-      id: ticket.id,
-      ticketNumber: ticket.ticketNumber,
-      eventName: ticket.event.name,
-      venue: ticket.event.venue,
-      datetime: ticket.event.datetime,
+  return NextResponse.json(
+    {
+      opRef: tx.opRef,
+      status: tx.status,
+      estimatedConfirmAt: tx.estimatedConfirmAt,
+      ticket: {
+        id: ticket.id,
+        ticketNumber: ticket.ticketNumber,
+        eventName: ticket.event.name,
+        venue: ticket.event.venue,
+        datetime: ticket.event.datetime,
+      },
     },
-    tx,
-  });
+    { status: 202 },
+  );
 }
