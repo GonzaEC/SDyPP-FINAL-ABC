@@ -34,6 +34,13 @@ jobs:
       - name: Init
         run: tofu init
 
+      - name: Import existing resources
+        run: |
+          tofu import -var="project_id=${{ secrets.GCP_PROJECT_ID }}" \
+            google_artifact_registry_repository.docker \
+            "projects/${{ secrets.GCP_PROJECT_ID }}/locations/us-central1/repositories/sdypp" \
+            || true
+
       - name: Plan
         run: tofu plan -var="project_id=${{ secrets.GCP_PROJECT_ID }}" -out=plan.tfplan
 
