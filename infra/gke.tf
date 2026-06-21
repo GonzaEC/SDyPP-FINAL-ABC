@@ -30,7 +30,6 @@ resource "google_container_node_pool" "infra" {
 
   node_config {
     machine_type = "e2-medium"
-    spot         = true
 
     labels = {
       pool = "infra"
