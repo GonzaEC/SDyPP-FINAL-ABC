@@ -1,6 +1,6 @@
 # App — Plataforma de Entradas en Blockchain
 
-Capa web (Frontend + Backend) del TP de Sistemas Distribuidos y Programación Paralela. Esta app
+aaaaaCapa web (Frontend + Backend) del TP de Sistemas Distribuidos y Programación Paralela. Esta app
 es la cara visible del sistema; la infraestructura de blockchain (NCT, workers de minería con
 CUDA, RabbitMQ, Redis, despliegue en GKE) la construyen los otros equipos y vive en `Pilar1/` y
 `Pilar2/` del monorepo.
