@@ -1,0 +1,32 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: blockchain-worker
+spec:
+  replicas: 4
+  selector:
+    matchLabels:
+      app: blockchain-worker
+  template:
+    metadata:
+      labels:
+        app: blockchain-worker
+    spec:
+      containers:
+        - name: worker
+          image: IMAGE_TAG
+          command: ["python3", "worker.py"]
+          env:
+            - name: RABBITMQ_HOST
+              value: "RABBITMQ_EXTERNAL_IP"
+            - name: REDIS_HOST
+              value: "REDIS_EXTERNAL_IP"
+            - name: GPU_SERVER_URL
+              value: "http://blockchain-gpu-server:8000"
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              cpu: 100m
+              memory: 128Mi

@@ -1,0 +1,27 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: blockchain-worker-cpu
+  namespace: sdypp
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: blockchain-worker-cpu
+  template:
+    metadata:
+      labels:
+        app: blockchain-worker-cpu
+    spec:
+      nodeSelector:
+        pool: apps
+      containers:
+        - name: worker-cpu
+          image: IMAGE_TAG
+          resources:
+            requests:
+              cpu: 100m
+              memory: 64Mi
+            limits:
+              cpu: 500m
+              memory: 128Mi

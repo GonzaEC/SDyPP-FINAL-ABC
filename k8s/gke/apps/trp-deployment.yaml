@@ -1,0 +1,27 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: blockchain-trp
+  namespace: sdypp
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: blockchain-trp
+  template:
+    metadata:
+      labels:
+        app: blockchain-trp
+    spec:
+      nodeSelector:
+        pool: apps
+      containers:
+        - name: trp
+          image: IMAGE_TAG
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              cpu: 200m
+              memory: 256Mi

@@ -1,0 +1,39 @@
+name: "Pipeline 2 - Servicios Infraestructura"
+
+on:
+  workflow_dispatch:
+  workflow_run:
+    workflows: ["Pipeline 1 - Infraestructura GKE"]
+    types: [completed]
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  gitleaks:
+    uses: ./.github/workflows/gitleaks.yml
+
+  deploy-infra:
+    name: Deploy Redis + RabbitMQ
+    needs: gitleaks
+    if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ secrets.GCP_WIF_PROVIDER }}
+          service_account: ${{ secrets.GCP_WIF_SERVICE_ACCOUNT }}
+
+      - uses: google-github-actions/get-gke-credentials@v2
+        with:
+          cluster_name: sdypp-cluster
+          location: us-central1-a
+
+      - name: Deploy namespace
+        run: kubectl apply -f k8s/gke/namespaces.yaml
+
+      - name: Deploy infrastructure services
+        run: kubectl apply -f k8s/gke/infra/

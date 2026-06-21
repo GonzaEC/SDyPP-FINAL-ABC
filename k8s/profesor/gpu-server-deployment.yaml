@@ -1,0 +1,27 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: blockchain-gpu-server
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: blockchain-gpu-server
+  template:
+    metadata:
+      labels:
+        app: blockchain-gpu-server
+    spec:
+      containers:
+        - name: gpu-server
+          image: IMAGE_TAG
+          ports:
+            - containerPort: 8000
+          env:
+            - name: RABBITMQ_HOST
+              value: "RABBITMQ_EXTERNAL_IP"
+            - name: REDIS_HOST
+              value: "REDIS_EXTERNAL_IP"
+          resources:
+            limits:
+              nvidia.com/gpu: 1
