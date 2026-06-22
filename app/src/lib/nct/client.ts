@@ -182,12 +182,14 @@ export async function submitTransfer(input: TransferInput): Promise<OperationRes
   const ticket = await prisma.ticket.findUnique({ where: { id: input.ticketId } });
   if (!ticket) throw new Error("ticket_not_found");
 
+  const nctTicketId = `${ticket.eventId}:${ticket.ticketNumber}`;
+
   const res = await fetch(nctUrl("/tx/transfer"), {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({
       event_id: ticket.eventId,
-      ticket_id: input.ticketId,
+      ticket_id: nctTicketId,
       from_pubkey: input.fromPublicKey,
       to_pubkey: input.toPublicKey,
       reason: input.reason,
