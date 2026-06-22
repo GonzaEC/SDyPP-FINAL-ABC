@@ -55,13 +55,25 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
   // 2. Despachar la operación al mock/NCT real (devuelve PENDING + opRef).
   // El status del evento pasa a EMITTED cuando la op se confirme (la propia
   // operación settle hace el update).
-  const result = await submitMintBatch({
-    eventId: event.id,
-    organizerPublicKey: session.publicKey,
-    ticketCount: event.ticketCount,
-    signedPayload: payload,
-    signature,
-  });
+  let result;
+  try {
+    result = await submitMintBatch({
+      eventId: event.id,
+      organizerPublicKey: session.publicKey,
+      ticketCount: event.ticketCount,
+      signedPayload: payload,
+      signature,
+    });
+  } catch (err) {
+    console.error("[emit] submitMintBatch failed:", err);
+    return NextResponse.json(
+      {
+        error: "nct_unavailable",
+        message: err instanceof Error ? err.message : "Error desconocido al hablar con el NCT.",
+      },
+      { status: 502 },
+    );
+  }
 
   const updated = await prisma.event.update({
     where: { id: event.id },
