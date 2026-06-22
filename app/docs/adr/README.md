@@ -30,6 +30,12 @@ Las ADRs son cortas, inmutables (no se editan, se reemplazan), y se numeran en o
 | [016](016-integracion-mercadopago.md) | Integración con MercadoPago (Checkout Pro) | Accepted |
 | [017](017-reventa-p2p.md) | Reventa peer-to-peer entre asistentes (mock) | Accepted |
 | [018](018-contrato-nct-ownership.md) | Contrato extendido del NCT (ownership de tickets + firma) | Accepted |
+| [019](019-deploy-gke-dos-clusters.md) | Deploy en GKE con dos clusters (propio + profesor) | Accepted |
+| [020](020-https-gke-managed-cert.md) | HTTPS con GKE Managed Certificate y dominio propio | Accepted |
+| [021](021-redis-persistencia-aof.md) | Persistencia de Redis con AOF para la blockchain | Accepted |
+| [022](022-panel-blockchain-monitoring.md) | Panel de monitoreo blockchain integrado en la app | Accepted |
+| [023](023-iac-terraform-gcp.md) | Infraestructura como código con Terraform/OpenTofu en GCP | Accepted |
+| [024](024-ci-cd-cuatro-pipelines.md) | CI/CD con cuatro pipelines especializados | Accepted |
 
 ## Cómo escribir una nueva
 

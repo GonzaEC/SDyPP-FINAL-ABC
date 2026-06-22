@@ -1,173 +1,164 @@
-# App — Plataforma de Entradas en Blockchain
+# App Web — Plataforma de Entradas con Blockchain
 
-aaaaaCapa web (Frontend + Backend) del TP de Sistemas Distribuidos y Programación Paralela. Esta app
-es la cara visible del sistema; la infraestructura de blockchain (NCT, workers de minería con
-CUDA, RabbitMQ, Redis, despliegue en GKE) la construyen los otros equipos y vive en `Pilar1/` y
-`Pilar2/` del monorepo.
+Aplicación full-stack en Next.js 16 que gestiona eventos, emite entradas como activos
+criptográficos en una blockchain propia, y permite compra, reventa y validación en puerta.
 
-## Qué hace
-
-- Un **organizador** crea eventos y emite N entradas a la blockchain (cada entrada es un activo
-  único con un dueño).
-- Cualquiera ve los eventos publicados en `/events`.
-- (Próximas iteraciones) comprador compra, validador escanea QR en la puerta y la entrada vuelve
-  al organizador como transacción — así no puede usarse dos veces.
-
-## Decisiones de diseño que conviene leer antes
-
-1. **Identidad por par de claves ECDSA P-256.** El usuario no se identifica solo con email —
-   tiene un par de claves generado en el navegador con WebCrypto. La pública es su "wallet
-   address"; con la privada firma transacciones (emisión, compra, validación).
-2. **Custodia híbrida.** Para soportar multi-dispositivo sin forzar al usuario a guardar una
-   frase mnemónica, la clave privada se guarda en el backend **cifrada con una key derivada de
-   la password del usuario** (PBKDF2-SHA256, 250k iteraciones, AES-GCM). La password nunca viaja
-   en claro (bcrypt server-side) y la clave privada nunca está en claro server-side — todo el
-   cifrado/descifrado ocurre en el browser.
-3. **Validar = devolver al organizador**, no marcar "usada". Cuando el QR se escanea en puerta,
-   se emite una transferencia que devuelve la entrada al organizador. La entrada deja de
-   pertenecer al asistente, así que el mismo QR ya no sirve. (Esta parte queda para una
-   iteración siguiente.)
-4. **Compatibilidad ECDSA Node ↔ WebCrypto.** P-256, SHA-256, firmas en formato IEEE P1363 (raw,
-   64 bytes). Ojo con esto si alguien intenta verificar firmas en otra librería que use DER
-   — ver [Stack Overflow #39554165](https://stackoverflow.com/questions/39554165/) que motivó
-   la elección.
+**URL de producción:** https://tesera.tech
 
 ## Stack
 
-- **Next.js 16** (App Router) + TypeScript + Tailwind 4
-- **Prisma 7** + Postgres (driver adapter `@prisma/adapter-pg`)
-- **iron-session** para sesiones (cookie httpOnly)
-- **WebCrypto** (cliente) / `node:crypto` (server) — ECDSA P-256, AES-GCM, PBKDF2
-- **bcryptjs** para hash de password
-- **Docker Compose** para orquestar app + Postgres
+- **Next.js 16** App Router + TypeScript estricto
+- **Tailwind 4** para estilos
+- **Prisma 7** + PostgreSQL 17 (driver adapter)
+- **iron-session** para sesiones server-side
+- **MercadoPago** Checkout Pro para pagos
+- **WebCrypto API** para ECDSA P-256
 
-## Cómo correr
+## Modelo criptográfico
 
-### Opción 1 — todo en Docker (recomendada)
+Cada usuario tiene un **par de claves ECDSA P-256** generado en el browser con WebCrypto:
 
-```bash
-docker compose up --build
-# http://localhost:3000
-```
+- La **clave pública** es su identidad on-chain (como una wallet address).
+- La **clave privada** se cifra con AES-GCM (derivada de la password con PBKDF2, 250K
+  iteraciones) y se guarda cifrada en el servidor. **Nunca se descifra fuera del browser.**
+- Si el usuario olvida la password, pierde la clave privada. No hay recovery.
 
-Levanta Postgres + la app. El entrypoint espera la DB, corre `prisma migrate deploy` y arranca
-`next start`. La password de sesión se puede overridear vía env (`SESSION_PASSWORD`).
+Ver ADRs [001](docs/adr/001-identidad-ecdsa.md), [002](docs/adr/002-custodia-hibrida-clave.md),
+[003](docs/adr/003-formato-firma-p1363.md).
 
-### Opción 2 — dev local con hot reload
+## Páginas
 
-```bash
-docker compose up -d postgres     # solo la DB
-npm install
-npx prisma migrate dev            # primera vez
-npm run dev                       # http://localhost:3000
-```
+| Ruta | Acceso | Función |
+|------|--------|---------|
+| `/` | Público | Landing page |
+| `/events` | Público | Cartelera de eventos con filtros |
+| `/events/[id]` | Público | Detalle del evento, compra de entrada |
+| `/panel` | Público | Monitor de blockchain en tiempo real |
+| `/login` | Público | Login (email + password → descifra clave privada) |
+| `/register` | Público | Registro (genera keypair ECDSA) |
+| `/dashboard` | Organizador | Dashboard: eventos propios, emisión, minting |
+| `/dashboard/events/new` | Organizador | Crear evento |
+| `/dashboard/events/[id]/edit` | Organizador | Editar evento |
+| `/my-tickets` | Autenticado | Mis entradas, listar para reventa |
+| `/scan` | Organizador | Escáner QR para validación en puerta |
 
-## Variables de entorno
+## API Endpoints
 
-Definidas en `.env` (local) y en `docker-compose.yml` (contenedor):
+### Auth
+| Método | Ruta | Función |
+|--------|------|---------|
+| POST | `/api/auth/register` | Registra usuario, guarda clave cifrada |
+| POST | `/api/auth/login` | Autentica, devuelve blob cifrado de clave privada |
+| POST | `/api/auth/logout` | Cierra sesión |
+| GET | `/api/me` | Usuario actual |
+| GET | `/api/me/unlock-blob` | Blob cifrado para re-descifrar clave |
 
-| Variable           | Default                                                          | Para qué                                           |
-|--------------------|------------------------------------------------------------------|----------------------------------------------------|
-| `DATABASE_URL`     | `postgres://entradas:entradas@localhost:5432/entradas`           | Conexión Postgres (lo lee `prisma.config.ts`)      |
-| `SESSION_PASSWORD` | dev placeholder (mínimo 32 chars)                                | Cifrado del cookie de sesión (iron-session)        |
-| `NCT_URL`          | `mock`                                                           | Endpoint del Nodo Coordinador. `mock` = loguea     |
+### Eventos
+| Método | Ruta | Función |
+|--------|------|---------|
+| GET/POST | `/api/events` | Listar / crear eventos |
+| GET/PATCH/DELETE | `/api/events/[id]` | CRUD de evento |
+| GET | `/api/events/[id]/emit/prepare` | Payload a firmar para emitir |
+| POST | `/api/events/[id]/emit` | Emitir entradas (firma ECDSA → mint on-chain) |
+| POST | `/api/events/[id]/checkout` | Crear preferencia MercadoPago |
+| POST | `/api/events/[id]/buy` | Compra mock (sin MP) |
 
-## Estructura
+### Blockchain
+| Método | Ruta | Función |
+|--------|------|---------|
+| GET | `/api/blockchain` | Estado de la blockchain (proxy al NCT) |
+| GET | `/api/operations/[opId]` | Estado de una operación on-chain |
+| POST | `/api/validate` | Validar entrada en puerta (QR firmado) |
+
+### Pagos
+| Método | Ruta | Función |
+|--------|------|---------|
+| POST | `/api/payments/webhook` | Webhook de MercadoPago |
+| GET | `/api/payments/[paymentId]` | Estado de un pago |
+
+### Reventa
+| Método | Ruta | Función |
+|--------|------|---------|
+| GET | `/api/events/[id]/listings` | Listings activos de un evento |
+| POST/DELETE | `/api/tickets/[id]/list` | Crear / cancelar listing de reventa |
+| POST | `/api/listings/[id]/checkout` | Checkout de reventa via MP |
+
+## Estructura del código
 
 ```
 src/
-  app/
-    (auth)/                    # /login, /register
-    dashboard/                 # organizador: lista, crear, emitir
-    events/                    # listado público + detalle
-    api/
-      auth/{login,logout,register}/
-      me/                      # info de la sesión actual
-      me/events/               # eventos del organizador logueado
-      events/                  # CRUD eventos
-      events/[id]/emit/...     # prepara payload + verifica firma + dispara NCT
-  components/
-    header-actions.tsx
-  lib/
-    db.ts                      # Prisma client (singleton + adapter pg)
-    session.ts                 # iron-session config
-    identity-store.ts          # cache en memoria de la clave privada desbloqueada (cliente)
-    crypto/
-      common.ts                # canonicalize, b64, randomBytes
-      client.ts                # WebCrypto: generar par, derivar key, encrypt, sign
-      server.ts                # verify con node:crypto.webcrypto
-    nct/
-      client.ts                # cliente HTTP del NCT (con mock)
-prisma/
-  schema.prisma                # User, Event
-  migrations/                  # generadas por `prisma migrate dev`
-docker/
-  entrypoint.sh                # wait DB + migrate + start
-scripts/
-  test-ecdsa-roundtrip.mjs     # firma WebCrypto ↔ verify node:crypto
-  smoke-e2e.mjs                # flujo completo register → create → emit
-docker-compose.yml
-Dockerfile
+├── app/                          # Next.js App Router
+│   ├── api/                      # API routes (server-side)
+│   │   ├── auth/                 # Register, login, logout
+│   │   ├── events/[id]/          # CRUD + emit + checkout
+│   │   ├── blockchain/           # Proxy al NCT
+│   │   ├── payments/             # Webhook MP
+│   │   ├── validate/             # Validación en puerta
+│   │   └── ...
+│   ├── dashboard/                # Panel organizador
+│   ├── events/                   # Páginas de eventos
+│   ├── panel/                    # Monitor blockchain
+│   ├── my-tickets/               # Mis entradas
+│   ├── scan/                     # Escáner QR
+│   └── layout.tsx                # Layout principal con nav
+├── lib/                          # Librerías compartidas
+│   ├── crypto/
+│   │   ├── client.ts             # WebCrypto: keygen, cifrado, firma (browser)
+│   │   ├── server.ts             # Verificación de firma (server)
+│   │   └── common.ts             # canonicalize(), randomBytes(), base64
+│   ├── nct/
+│   │   ├── client.ts             # Cliente NCT (mock + real)
+│   │   └── wait.ts               # Polling de operaciones
+│   ├── payments/
+│   │   └── mercadopago.ts        # SDK MercadoPago
+│   ├── db.ts                     # Prisma singleton con driver adapter
+│   ├── session.ts                # iron-session
+│   └── identity-store.ts         # Store in-memory de CryptoKey
+├── components/                   # Componentes React reutilizables
+└── generated/                    # Prisma client generado
 ```
 
-## Flujos principales
+## Ciclo de vida de una entrada
 
-### Registro
-1. Cliente pide email + password.
-2. Cliente genera par ECDSA con WebCrypto, deriva una key AES-GCM con PBKDF2(password, salt),
-   cifra la clave privada.
-3. `POST /api/auth/register` con `{email, password, publicKey, encryptedPrivateKey, kdfSalt, kdfIv, role}`.
-4. Server bcrypt-ea la password, persiste `User`, abre sesión.
+```
+1. DRAFT        → Organizador crea evento
+2. MINTING      → Firma mint_batch → NCT acepta → workers minan
+3. EMITTED      → Bloque confirmado → N tickets materializados en DB
+4. COMPRA       → Asistente paga (MP) → transfer on-chain org→comprador
+5. VALIDACIÓN   → QR firmado → transfer on-chain comprador→org (= "usada")
+```
 
-### Login
-1. `POST /api/auth/login` con `{email, password}`.
-2. Server valida bcrypt, abre sesión, devuelve `{publicKey, encryptedPrivateKey, kdfSalt, kdfIv}`.
-3. Cliente deriva la key con la password y descifra la privada. La guarda en memoria
-   (`identity-store.ts`) — no en localStorage. Cerrar pestaña pierde la clave; hay que loguearse
-   de nuevo.
+## Integración con la blockchain (NCT)
 
-### Crear y emitir evento (organizador)
-1. `POST /api/events` → guarda `Event` con `status=DRAFT`.
-2. `POST /api/events/{id}/emit/prepare` → devuelve el payload canónico a firmar.
-3. Cliente firma con `crypto.subtle.sign(ECDSA, key, canonicalize(payload))`.
-4. `POST /api/events/{id}/emit` con `{payload, signature}` → server verifica firma con la pubkey
-   guardada, dispara `submitMintBatch()` al NCT, persiste `ncTBatchRef` y `status=EMITTED`.
+El cliente en `lib/nct/client.ts` soporta dos modos:
 
-### Validar entrada (próxima iteración)
-Asistente abre la app, firma `{ticketId, timestamp}`. Validador escanea QR, manda al backend,
-backend verifica firma + dueño + frescura, emite transferencia de vuelta al organizador.
+- **Mock** (`NCT_URL` vacío o `"mock"`): simula delays y confirmaciones localmente.
+  Útil para desarrollo sin levantar la blockchain.
+- **Real** (`NCT_URL=http://blockchain-nct`): llama a los endpoints del NCT real.
+  Las operaciones son async (202 Accepted → polling hasta CONFIRMED).
 
-## Integración con el NCT (lo de tus compañeros)
+Ver ADR [018](docs/adr/018-contrato-nct-ownership.md) para el contrato completo.
 
-`src/lib/nct/client.ts` hoy hace mock — loguea la transacción y devuelve un `batchRef` fake. Para
-conectarlo de verdad hay que acordar con el equipo de blockchain:
+## Decisiones de arquitectura
 
-- **URL** del endpoint para publicar transacciones (`NCT_URL`).
-- **Formato canónico** del payload a firmar — hoy uso JSON con keys ordenadas alfabéticamente
-  (ver `canonicalize` en `src/lib/crypto/common.ts`). Si ellos usan otra serialización, la
-  firma no va a verificar de su lado.
-- **Modelo de batch de emisión**: ¿una tx con N outputs? ¿N transacciones independientes? ¿una
-  "crear evento" más N "mint"?
-- **Respuesta del NCT al aceptar**: qué identificador devuelve (id, hash, índice de bloque
-  cuando esté minado).
+Todas documentadas en [`docs/adr/`](docs/adr/). Las más importantes:
 
-## Verificación
+- [001](docs/adr/001-identidad-ecdsa.md) — Identidad por ECDSA P-256
+- [005](docs/adr/005-validacion-como-transferencia.md) — Validación = transferencia
+- [016](docs/adr/016-integracion-mercadopago.md) — MercadoPago Checkout Pro
+- [018](docs/adr/018-contrato-nct-ownership.md) — Contrato NCT + ownership
+
+## Cómo correr
 
 ```bash
-# Roundtrip ECDSA WebCrypto ↔ node:crypto (no requiere DB ni server corriendo)
-node scripts/test-ecdsa-roundtrip.mjs
+# Dev (solo app + Postgres)
+docker compose up -d postgres
+npm install
+npm run dev
 
-# Flujo completo contra la app en localhost:3000
-node scripts/smoke-e2e.mjs
+# Producción (Docker)
+docker compose up
+
+# Tests
+npm test
 ```
-
-`smoke-e2e.mjs` simula el navegador: genera par, registra organizador, crea evento, firma el
-payload de emisión, dispara `emit`, lista eventos públicos, intenta re-emitir (debe rechazar).
-
-## Fuera de alcance (todavía)
-
-- Checkout con MercadoPago y asociación pago ↔ pubkey.
-- Vista del validador en puerta (scanner de cámara + firma del asistente con timestamp).
-- Reventa / transferencia entre usuarios.
-- Recuperación de password (implicaría perder la clave privada — habría que ofrecer mnemonic
-  backup opcional).
