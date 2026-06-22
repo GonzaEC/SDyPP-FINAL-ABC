@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { prisma } from "@/lib/db";
-import { PaseMockup } from "@/components/pase-mockup";
+import { TeseraMockup } from "@/components/tesera-mockup";
 import { getSession } from "@/lib/session";
 import { getDisplayName, getInitials } from "@/lib/display-name";
 import { BuyButton } from "./buy-button";
@@ -126,10 +126,10 @@ export default async function EventDetail({ params }: { params: Promise<{ id: st
           </Link>
 
           <div className="card p-5 sm:p-6 space-y-4">
-            <h2 className="text-[15px] sm:text-[16px] font-semibold">Cómo funciona tu pase</h2>
+            <h2 className="text-[15px] sm:text-[16px] font-semibold">Cómo funciona tu entrada</h2>
             <ol className="space-y-3 text-[13px] sm:text-[14px] text-[var(--ink-2)]">
               {[
-                "Al comprar, tu pase se emite a tu clave pública.",
+                "Al comprar, tu entrada se emite a tu clave pública.",
                 "El día del evento, firmás un challenge con tu privada (queda en tu dispositivo).",
                 "El validador escanea el QR; la entrada se transfiere de vuelta al organizador.",
                 "No puede usarse dos veces — la propiedad ya cambió on-chain.",
@@ -150,7 +150,7 @@ export default async function EventDetail({ params }: { params: Promise<{ id: st
 
         <aside className="lg:col-span-5 space-y-4 sm:space-y-5 rise rise-2">
           <div className="flex justify-center pt-2">
-            <PaseMockup
+            <TeseraMockup
               name={event.name}
               venue={event.venue}
               date={`${date.toLocaleDateString("es-AR", { day: "2-digit", month: "short" }).toUpperCase().replace(".", "")} · ${date.toLocaleTimeString("es-AR", { hour: "2-digit", minute: "2-digit" })}`}
@@ -160,7 +160,7 @@ export default async function EventDetail({ params }: { params: Promise<{ id: st
 
           <div className="card p-5 sm:p-6 space-y-1">
             <div className="flex items-baseline justify-between mb-4">
-              <p className="text-[13px] text-[var(--muted)]">Precio del pase</p>
+              <p className="text-[13px] text-[var(--muted)]">Precio de la entrada</p>
               <p className="text-[26px] sm:text-[32px] font-semibold leading-none tracking-[-0.02em]">
                 ${event.price.toFixed(2)}
               </p>

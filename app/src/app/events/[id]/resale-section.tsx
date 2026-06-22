@@ -74,7 +74,7 @@ export async function ResaleSection({ eventId, viewerPublicKey, viewerLoggedIn }
               <div className="flex-1 min-w-0">
                 <p className="text-[13px] font-medium truncate">{sellerName}</p>
                 <p className="text-[11.5px] text-[var(--muted)] mono">
-                  Pase #{l.ticket.ticketNumber}
+                  Entrada #{l.ticket.ticketNumber}
                 </p>
               </div>
               <div className="text-right flex-shrink-0">

@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { prisma } from "@/lib/db";
-import { PaseMockup } from "@/components/pase-mockup";
+import { TeseraMockup } from "@/components/tesera-mockup";
 
 export const dynamic = "force-dynamic";
 
@@ -37,9 +37,22 @@ export default async function Home() {
                 </svg>
               </Link>
               <Link href="/register" className="btn btn-secondary btn-lg w-full sm:w-auto">
-                Soy organizador
+                Crear cuenta
               </Link>
             </div>
+
+            <p className="rise rise-4 text-[13.5px] text-[var(--muted)] -mt-1">
+              ¿Ya tenés cuenta?{" "}
+              <Link
+                href="/login"
+                className="font-medium text-[var(--brand)] hover:underline underline-offset-4 decoration-[1.5px] inline-flex items-center gap-1"
+              >
+                Ingresar
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" aria-hidden>
+                  <path d="M5 12h14M13 5l7 7-7 7" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" />
+                </svg>
+              </Link>
+            </p>
 
             <div className="rise rise-5 flex flex-wrap items-center gap-x-5 gap-y-2 pt-1 text-[13px] text-[var(--muted)]">
               <span className="flex items-center gap-2">
@@ -67,7 +80,7 @@ export default async function Home() {
                   filter: "blur(40px)",
                 }}
               />
-              <PaseMockup />
+              <TeseraMockup />
             </div>
           </div>
         </div>
@@ -126,7 +139,7 @@ export default async function Home() {
             {
               n: "03",
               title: "Validá en puerta",
-              body: "El asistente firma su pase, el validador escanea, y la entrada se transfiere de vuelta al organizador.",
+              body: "El asistente firma su entrada, el validador escanea, y se transfiere de vuelta al organizador.",
               icon: (
                 <svg width="22" height="22" viewBox="0 0 24 24" fill="none">
                   <path d="m5 12 5 5L20 7" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
@@ -165,7 +178,7 @@ export default async function Home() {
                   "radial-gradient(120% 80% at 0% 0%, rgba(0,102,255,0.06), transparent 60%), var(--surface)",
               }}
             >
-              <PaseMockup />
+              <TeseraMockup />
             </div>
             <div className="p-8 sm:p-12 lg:p-14 flex flex-col justify-center">
               <p className="eyebrow mb-3">Validar = transferir</p>

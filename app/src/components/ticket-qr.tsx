@@ -5,6 +5,7 @@ import QRCode from "qrcode";
 import { signPayload } from "@/lib/crypto/client";
 import { getUnlockedKey } from "@/lib/identity-store";
 import { UnlockKeyModal } from "./unlock-key-modal";
+import { IconLock } from "./icons";
 
 interface Props {
   ticketId: string;
@@ -90,7 +91,7 @@ export function TicketQR({ ticketId, publicKey, size = 320, refreshMs = 30_000 }
     return (
       <div
         style={{ width: size, height: size }}
-        className="flex items-center justify-center text-[12px] text-[var(--danger)] bg-[var(--paper-2)] rounded-lg p-4 text-center"
+        className="flex items-center justify-center text-[12px] text-[var(--danger)] bg-[var(--surface-2)] rounded-lg p-4 text-center"
       >
         {error}
       </div>
@@ -102,16 +103,13 @@ export function TicketQR({ ticketId, publicKey, size = 320, refreshMs = 30_000 }
       <>
         <div
           style={{ width: size, height: size }}
-          className="flex flex-col items-center justify-center gap-3 text-center bg-[var(--paper-2)] rounded-lg p-5"
+          className="flex flex-col items-center justify-center gap-3 text-center bg-[var(--surface-2)] rounded-lg p-5"
         >
           <div
             className="w-12 h-12 rounded-xl grid place-items-center"
             style={{ background: "var(--brand-soft)", color: "var(--brand)" }}
           >
-            <svg width="22" height="22" viewBox="0 0 24 24" fill="none">
-              <rect x="4" y="10" width="16" height="10" rx="2" stroke="currentColor" strokeWidth="1.8" />
-              <path d="M8 10V7a4 4 0 0 1 8 0v3" stroke="currentColor" strokeWidth="1.8" />
-            </svg>
+            <IconLock size={22} />
           </div>
           <p className="text-[13px] text-[var(--muted)] max-w-[220px] leading-snug">
             Tu clave está bloqueada. Desbloqueala con tu contraseña para mostrar el QR.
@@ -137,7 +135,7 @@ export function TicketQR({ ticketId, publicKey, size = 320, refreshMs = 30_000 }
     return (
       <div
         style={{ width: size, height: size }}
-        className="flex items-center justify-center text-[12px] text-[var(--muted)] bg-[var(--paper-2)] rounded-lg"
+        className="flex items-center justify-center text-[12px] text-[var(--muted)] bg-[var(--surface-2)] rounded-lg"
       >
         Firmando…
       </div>

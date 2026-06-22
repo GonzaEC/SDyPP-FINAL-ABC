@@ -19,7 +19,7 @@ export function ThemeToggle() {
     setTheme(next);
     document.documentElement.setAttribute("data-theme", next);
     try {
-      localStorage.setItem("pase-theme", next);
+      localStorage.setItem("tesera-theme", next);
     } catch {}
   }
 

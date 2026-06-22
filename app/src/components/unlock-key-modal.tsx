@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { unlockPrivateKey } from "@/lib/crypto/client";
 import { setUnlockedKey } from "@/lib/identity-store";
+import { IconLock } from "./icons";
 
 interface Props {
   open: boolean;
@@ -75,17 +76,14 @@ export function UnlockKeyModal({ open, onClose, onUnlocked }: Props) {
       <form
         onClick={(e) => e.stopPropagation()}
         onSubmit={handleSubmit}
-        className="bg-[var(--paper)] border border-[var(--line)] rounded-2xl p-6 w-full max-w-sm shadow-xl space-y-4"
+        className="bg-[var(--bg)] border border-[var(--line)] rounded-2xl p-6 w-full max-w-sm shadow-xl space-y-4"
       >
         <header className="space-y-1.5">
           <div
             className="w-10 h-10 rounded-xl grid place-items-center"
             style={{ background: "var(--brand-soft)", color: "var(--brand)" }}
           >
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none">
-              <rect x="4" y="10" width="16" height="10" rx="2" stroke="currentColor" strokeWidth="1.8" />
-              <path d="M8 10V7a4 4 0 0 1 8 0v3" stroke="currentColor" strokeWidth="1.8" />
-            </svg>
+            <IconLock size={20} />
           </div>
           <h2 className="text-[18px] font-semibold leading-tight">Desbloquear tu clave</h2>
           <p className="text-[13px] text-[var(--muted)] leading-snug">

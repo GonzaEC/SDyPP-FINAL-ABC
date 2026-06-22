@@ -265,7 +265,7 @@ function ResultOverlay({
         </div>
         <p className="text-[24px] font-bold leading-tight">Validando on-chain…</p>
         <div className="space-y-0.5">
-          <p className="text-[16px] font-semibold">Pase #{result.ticketNumber}</p>
+          <p className="text-[16px] font-semibold">Entrada #{result.ticketNumber}</p>
           <p className="text-[14px]" style={{ color: "#bbd0ff" }}>
             {result.eventName}
           </p>

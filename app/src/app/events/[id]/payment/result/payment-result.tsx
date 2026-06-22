@@ -83,7 +83,7 @@ export function PaymentResult({
 
         if (attempts >= MAX_ATTEMPTS) {
           setStage("error");
-          setErrorMsg("El pago está tardando más de lo esperado. Revisá en 'Mis pases' en unos minutos.");
+          setErrorMsg("El pago está tardando más de lo esperado. Revisá en 'Mis entradas' en unos minutos.");
           return;
         }
 
@@ -146,7 +146,7 @@ export function PaymentResult({
           )}
           <div className="flex flex-col gap-2.5 pt-2">
             <Link href="/my-tickets" className="btn btn-primary w-full">
-              Ver mis pases
+              Ver mis entradas
             </Link>
             <Link href={`/events/${eventId}`} className="btn btn-secondary w-full">
               Volver al evento
@@ -192,7 +192,7 @@ export function PaymentResult({
           <p className="text-[14px] text-[var(--muted)]">{errorMsg}</p>
           <div className="flex flex-col gap-2.5 pt-2">
             <Link href="/my-tickets" className="btn btn-primary w-full">
-              Revisar mis pases
+              Revisar mis entradas
             </Link>
             <Link href={`/events/${eventId}`} className="btn btn-secondary w-full">
               Volver al evento

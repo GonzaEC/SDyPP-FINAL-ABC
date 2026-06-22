@@ -16,7 +16,7 @@ export default async function MyTicketsPage() {
     return (
       <div className="mx-auto max-w-4xl w-full px-4 sm:px-6 py-10 sm:py-14 space-y-8">
         <header className="space-y-2">
-          <p className="eyebrow">Mis pases</p>
+          <p className="eyebrow">Mis entradas</p>
           <h1 className="text-[30px] sm:text-[40px] lg:text-[44px] leading-[1.05] tracking-[-0.025em] font-semibold">
             Todavía no tenés entradas
           </h1>
@@ -56,7 +56,7 @@ export default async function MyTicketsPage() {
   return (
     <div className="mx-auto max-w-4xl w-full px-4 sm:px-6 py-10 sm:py-14 space-y-8">
       <header className="space-y-2">
-        <p className="eyebrow">Mis pases</p>
+        <p className="eyebrow">Mis entradas</p>
         <h1 className="text-[30px] sm:text-[40px] lg:text-[44px] leading-[1.05] tracking-[-0.025em] font-semibold">
           Tus entradas
         </h1>

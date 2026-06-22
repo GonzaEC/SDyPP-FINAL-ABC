@@ -6,7 +6,7 @@ type Props = {
   className?: string;
 };
 
-export function PaseMockup({
+export function TeseraMockup({
   name = "Festival Distribuido",
   venue = "Auditorio UTN — Buenos Aires",
   date = "14 OCT · 21:00",
@@ -14,11 +14,11 @@ export function PaseMockup({
   className = "",
 }: Props) {
   return (
-    <div className={`pase-card w-full max-w-[380px] ${className}`} aria-hidden>
+    <div className={`tesera-card w-full max-w-[380px] ${className}`} aria-hidden>
       <div className="flex items-start justify-between">
         <div>
           <p className="text-[11px] font-semibold tracking-[0.14em] uppercase text-white/70">
-            Pase
+            Entrada
           </p>
           <p className="text-[22px] font-semibold leading-tight mt-1.5 text-white">
             {name}

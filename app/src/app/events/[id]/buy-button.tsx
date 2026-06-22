@@ -74,7 +74,7 @@ export function BuyButton({ eventId, disabled, reason }: { eventId: string; disa
           className="btn btn-primary w-full btn-lg cursor-not-allowed opacity-60"
           title={reason}
         >
-          Comprar pase
+          Comprar entrada
         </button>
         {reason && (
           <p className="text-[12px] text-[var(--muted)] text-center mt-2">{reason}</p>
@@ -90,10 +90,10 @@ export function BuyButton({ eventId, disabled, reason }: { eventId: string; disa
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
             <path d="M5 12l5 5L20 7" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />
           </svg>
-          Pase #{stage.ticketNumber} confirmado en blockchain
+          Entrada #{stage.ticketNumber} confirmada en blockchain
         </p>
         <a href="/my-tickets" className="btn btn-secondary w-full btn-sm">
-          Ver mis pases
+          Ver mis entradas
         </a>
       </div>
     );
@@ -121,7 +121,7 @@ export function BuyButton({ eventId, disabled, reason }: { eventId: string; disa
 
   if (stage.kind === "mock_buying" || stage.kind === "mock_polling") {
     const inFlight = stage.kind;
-    const ticketLabel = stage.kind === "mock_polling" ? `Pase #${stage.ticketNumber} reservado` : null;
+    const ticketLabel = stage.kind === "mock_polling" ? `Entrada #${stage.ticketNumber} reservada` : null;
     return (
       <div className="space-y-3">
         <button disabled className="btn btn-primary w-full btn-lg cursor-wait">

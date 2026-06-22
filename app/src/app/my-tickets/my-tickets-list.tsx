@@ -73,7 +73,7 @@ export function MyTicketsList({
             </div>
 
             {isOpen && (
-              <div className="border-t border-[var(--line)] p-5 flex flex-col items-center gap-3 bg-[var(--paper-2)]">
+              <div className="border-t border-[var(--line)] p-5 flex flex-col items-center gap-3 bg-[var(--surface-2)]">
                 <TicketQR ticketId={t.ticketId} publicKey={publicKey} size={240} />
                 <p className="text-[12px] text-[var(--muted)] max-w-xs text-center">
                   Mostrá este QR en la puerta. Se renueva cada 30 segundos para evitar capturas.

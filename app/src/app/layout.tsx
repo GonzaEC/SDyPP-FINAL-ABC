@@ -4,6 +4,8 @@ import Link from "next/link";
 import { getSession } from "@/lib/session";
 import { HeaderActions } from "@/components/header-actions";
 import { ThemeToggle } from "@/components/theme-toggle";
+import { Logo } from "@/components/logo";
+import { MobileNav } from "@/components/mobile-nav";
 import "./globals.css";
 
 const dmSans = DM_Sans({
@@ -18,16 +20,17 @@ const jetbrainsMono = JetBrains_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Pase · Entradas en blockchain",
-  description: "Cada entrada, un activo único. Una sola vez.",
+  metadataBase: new URL("https://tesera.tech"),
+  title: "Tesera · Entradas en blockchain",
+  description: "Cada entrada, una tesera única en la cadena. Imposible de duplicar.",
 };
 
 const themeBootstrap = `
 (function(){try{
-  var t=localStorage.getItem('pase-theme');
-  if(!t){t=window.matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light';}
+  var t=localStorage.getItem('tesera-theme');
+  if(t!=='dark'&&t!=='light'){t='light';}
   document.documentElement.setAttribute('data-theme',t);
-}catch(e){}
+}catch(e){document.documentElement.setAttribute('data-theme','light');}
 })();`;
 
 export default async function RootLayout({ children }: { children: React.ReactNode }) {
@@ -35,6 +38,18 @@ export default async function RootLayout({ children }: { children: React.ReactNo
   const user = session.userId
     ? { email: session.email ?? "", role: (session.role ?? "ATTENDEE") as "ATTENDEE" | "ORGANIZER" }
     : null;
+
+  const navLinks = [
+    { href: "/events", label: "Eventos" },
+    { href: "/panel", label: "Blockchain" },
+    ...(user?.role === "ORGANIZER"
+      ? [
+          { href: "/dashboard", label: "Panel" },
+          { href: "/scan", label: "Validar" },
+        ]
+      : []),
+    ...(user ? [{ href: "/my-tickets", label: "Mis entradas" }] : []),
+  ];
 
   return (
     <html
@@ -45,66 +60,39 @@ export default async function RootLayout({ children }: { children: React.ReactNo
         <script dangerouslySetInnerHTML={{ __html: themeBootstrap }} />
       </head>
       <body className="min-h-full flex flex-col">
-        <header className="sticky top-0 z-30 backdrop-blur-xl bg-[color-mix(in_srgb,var(--bg)_80%,transparent)] border-b border-[var(--line)]">
+        <header className="site-header sticky top-0 z-30 backdrop-blur-xl bg-[color-mix(in_srgb,var(--bg)_82%,transparent)] border-b border-[var(--line)]">
           <div className="mx-auto max-w-6xl px-4 sm:px-6 h-14 sm:h-16 flex items-center justify-between gap-2">
-            <Link href="/" className="flex items-center gap-2 group flex-shrink-0">
-              <span
-                aria-hidden
-                className="inline-block w-7 h-7 rounded-[8px] grid place-items-center"
-                style={{
-                  background:
-                    "linear-gradient(135deg, #0a3aff 0%, #0066ff 60%, #4d8bff 100%)",
-                  boxShadow: "inset 0 1px 0 rgba(255,255,255,0.3)",
-                }}
-              >
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden>
-                  <path d="M6 4h8a4 4 0 0 1 0 8h-4v8H6V4Z" fill="#fff" />
-                </svg>
-              </span>
-              <span className="font-semibold tracking-tight text-[16px] sm:text-[17px]">Pase</span>
+            <Link href="/" className="flex-shrink-0">
+              <Logo />
             </Link>
 
-            <nav className="flex items-center gap-0.5 sm:gap-1 text-[13px] sm:text-[14px]">
-              <Link
-                href="/events"
-                className="inline-flex items-center h-8 sm:h-9 px-2.5 sm:px-3 rounded-full text-[var(--ink-2)] hover:bg-[var(--surface)] transition-colors"
-              >
-                Eventos
-              </Link>
-              <Link
-                href="/panel"
-                className="inline-flex items-center h-8 sm:h-9 px-2.5 sm:px-3 rounded-full text-[var(--ink-2)] hover:bg-[var(--surface)] transition-colors"
-              >
-                Blockchain
-              </Link>
-              {user?.role === "ORGANIZER" && (
-                <>
-                  <Link
-                    href="/dashboard"
-                    className="inline-flex items-center h-8 sm:h-9 px-2.5 sm:px-3 rounded-full text-[var(--ink-2)] hover:bg-[var(--surface)] transition-colors"
-                  >
-                    Panel
-                  </Link>
-                  <Link
-                    href="/scan"
-                    className="inline-flex items-center h-8 sm:h-9 px-2.5 sm:px-3 rounded-full text-[var(--ink-2)] hover:bg-[var(--surface)] transition-colors"
-                  >
-                    Validar
-                  </Link>
-                </>
-              )}
-              {user && (
+            <nav className="hidden sm:flex items-center gap-0.5 sm:gap-1 text-[14px]">
+              {navLinks.map((l) => (
                 <Link
-                  href="/my-tickets"
-                  className="inline-flex items-center h-8 sm:h-9 px-2.5 sm:px-3 rounded-full text-[var(--ink-2)] hover:bg-[var(--surface)] transition-colors"
+                  key={l.href}
+                  href={l.href}
+                  className="inline-flex items-center h-9 px-3 rounded-full text-[var(--ink-2)] hover:bg-[var(--surface)] transition-colors"
                 >
-                  Mis pases
+                  {l.label}
                 </Link>
-              )}
+              ))}
+            </nav>
+
+            <div className="hidden sm:flex items-center gap-0.5">
               <ThemeToggle />
               <HeaderActions user={user} />
-            </nav>
+            </div>
+
+            <div className="flex sm:hidden items-center gap-1">
+              <ThemeToggle />
+              <MobileNav
+                links={navLinks}
+                user={user}
+                footer={<HeaderActions user={user} />}
+              />
+            </div>
           </div>
+          <span aria-hidden className="site-header__hair" />
         </header>
 
         <main className="flex-1 flex flex-col">{children}</main>
@@ -112,18 +100,9 @@ export default async function RootLayout({ children }: { children: React.ReactNo
         <footer className="border-t border-[var(--line)] mt-16 sm:mt-24">
           <div className="mx-auto max-w-6xl px-4 sm:px-6 py-10 sm:py-12 grid sm:grid-cols-2 gap-8 items-start">
             <div>
-              <div className="flex items-center gap-2.5">
-                <span
-                  aria-hidden
-                  className="inline-block w-6 h-6 rounded-[7px]"
-                  style={{
-                    background: "linear-gradient(135deg, #0a3aff, #4d8bff)",
-                  }}
-                />
-                <span className="font-semibold">Pase</span>
-              </div>
+              <Logo size="sm" className="gap-2.5" />
               <p className="text-[14px] text-[var(--muted)] mt-3 max-w-sm">
-                Capa web del TP de Sistemas Distribuidos. Entradas como activos únicos en blockchain.
+                Cada entrada, una tesera única en la cadena. Capa web del TP de Sistemas Distribuidos.
               </p>
             </div>
             <div className="flex flex-wrap gap-x-12 gap-y-6 justify-start sm:justify-end text-[13px]">
@@ -148,7 +127,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
           <div className="border-t border-[var(--line)]">
             <div className="mx-auto max-w-6xl px-4 sm:px-6 h-12 flex items-center justify-between text-[11px] sm:text-[12px] text-[var(--muted)]">
               <span>SDyPP · 2026</span>
-              <span>© Pase</span>
+              <span>© Tesera · tesera.tech</span>
             </div>
           </div>
         </footer>

@@ -14,7 +14,7 @@ export default async function ScanPage() {
       <header className="space-y-2">
         <p className="eyebrow">Validación en puerta</p>
         <h1 className="text-[28px] sm:text-[36px] leading-[1.05] tracking-[-0.025em] font-semibold">
-          Escanear pase
+          Escanear entrada
         </h1>
         <p className="text-[14px] text-[var(--muted)] max-w-lg">
           Apuntá la cámara al QR del asistente. Al validarse, la entrada se transfiere de

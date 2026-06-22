@@ -51,7 +51,7 @@ export function BlockchainPanel() {
         <span
           className="inline-block w-2 h-2 rounded-full"
           style={{
-            background: error ? "var(--error)" : "var(--success)",
+            background: error ? "var(--danger)" : "var(--success)",
             animation: error ? "none" : "pulse 2s infinite",
           }}
         />

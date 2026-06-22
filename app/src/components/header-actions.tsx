@@ -10,14 +10,15 @@ export function HeaderActions({ user }: { user: { email: string; role: string } 
   if (!user) {
     return (
       <>
+        <span aria-hidden className="hidden sm:block w-px h-5 bg-[var(--line-strong)] mx-1.5" />
         <Link
           href="/login"
-          className="hidden sm:inline-flex items-center h-9 px-3 rounded-full text-[var(--ink-2)] hover:bg-[var(--surface)] transition-colors text-[14px]"
+          className="inline-flex items-center h-9 px-3 rounded-full text-[14px] font-medium text-[var(--ink)] hover:text-[var(--brand)] hover:bg-[var(--brand-soft)] transition-colors"
         >
           Ingresar
         </Link>
         <Link href="/register" className="btn btn-primary btn-sm text-[12px] sm:text-[13px] px-3 sm:px-4">
-          <span className="sm:hidden">Entrar</span>
+          <span className="sm:hidden">Crear</span>
           <span className="hidden sm:inline">Crear cuenta</span>
         </Link>
       </>

@@ -11,7 +11,7 @@ const TYPE_COLORS: Record<string, { dot: string; label: string }> = {
   bloque_creado: { dot: "var(--success)", label: "Bloque creado" },
   transaccion_recibida: { dot: "var(--brand)", label: "TX recibida" },
   trp_subdividio_tarea: { dot: "var(--muted)", label: "TrP subdividió" },
-  solucion_invalida: { dot: "var(--error)", label: "Solución inválida" },
+  solucion_invalida: { dot: "var(--danger)", label: "Solución inválida" },
   dificultad_cambiada: { dot: "var(--warn)", label: "Dificultad" },
 };
 
