@@ -4,6 +4,8 @@ import time
 import redis
 import threading
 import math
+import urllib.request
+import ssl
 
 # TRP (Pool de Transacciones) es un intermediario inteligente entre el NCT y los workers. 
 # El NCT dice "minà este bloque", y el TrP se encarga de dividir ese trabajo, distribuirlo, y decidir si hay que cambiar de modo GPU a CPU.
@@ -42,6 +44,33 @@ channel.queue_declare(queue='soluciones')
 
 FALLBACK_DIFFICULTY = "0"    # dificultad reducida para CPU
 ORIGINAL_DIFFICULTY_KEY = "difficulty_original"
+CPU_WORKER_REPLICAS = 2     # réplicas de worker-cpu en modo fallback
+
+
+def scale_cpu_workers(replicas: int):
+    """Escala el deployment de worker-cpu usando la API de Kubernetes in-cluster."""
+    try:
+        token_path = "/var/run/secrets/kubernetes.io/serviceaccount/token"
+        ca_path = "/var/run/secrets/kubernetes.io/serviceaccount/ca.crt"
+        with open(token_path) as f:
+            token = f.read().strip()
+        url = (
+            "https://kubernetes.default.svc/apis/apps/v1"
+            "/namespaces/sdypp/deployments/blockchain-worker-cpu/scale"
+        )
+        patch = json.dumps({"spec": {"replicas": replicas}}).encode()
+        ctx = ssl.create_default_context(cafile=ca_path)
+        req = urllib.request.Request(
+            url, data=patch, method="PATCH",
+            headers={
+                "Authorization": f"Bearer {token}",
+                "Content-Type": "application/merge-patch+json",
+            },
+        )
+        urllib.request.urlopen(req, context=ctx, timeout=10)
+        print(f"[TrP] worker-cpu escalado a {replicas} réplicas")
+    except Exception as e:
+        print(f"[TrP] Error escalando worker-cpu: {e}")
 
 # Verificamos si el gpu-server sigue vivo chequeando su heartbeat en Redis.
 def is_gpu_server_alive() -> bool:
@@ -65,12 +94,7 @@ def monitor_loop():
                 r.set(ORIGINAL_DIFFICULTY_KEY, original)
             r.set("difficulty", FALLBACK_DIFFICULTY)
 
-            # TODO (integración GCP): iniciar instancias CPU en la nube.
-            # Ej: disparar un Cloud Run Job vía la API de Google Cloud
-            # (google-cloud-run client) para que arranque N ejecuciones
-            # de worker_cpu.py. Cada ejecución consume de [tareas] igual
-            # que un worker normal, no necesita más coordinación desde acá.
-            # start_cpu_instances(n=4)
+            scale_cpu_workers(CPU_WORKER_REPLICAS)
 
             in_fallback = True
 
@@ -81,12 +105,7 @@ def monitor_loop():
             if original:
                 r.set("difficulty", original)
 
-            # TODO (integración GCP): destruir/dejar de lanzar instancias CPU.
-            # Con Cloud Run Jobs no haría falta "apagar" nada explícitamente
-            # (cada ejecución termina sola), simplemente se deja de disparar
-            # nuevas ejecuciones. Si se usa otro mecanismo (VMs, etc.) acá
-            # iría la destrucción explícita de esos recursos.
-            # stop_cpu_instances()
+            scale_cpu_workers(0)
 
             in_fallback = False
 

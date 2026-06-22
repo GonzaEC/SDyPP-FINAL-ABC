@@ -1,0 +1,30 @@
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: trp-sa
+  namespace: sdypp
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: trp-scaler
+  namespace: sdypp
+rules:
+  - apiGroups: ["apps"]
+    resources: ["deployments/scale"]
+    verbs: ["get", "patch"]
+    resourceNames: ["blockchain-worker-cpu"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: trp-scaler-binding
+  namespace: sdypp
+subjects:
+  - kind: ServiceAccount
+    name: trp-sa
+    namespace: sdypp
+roleRef:
+  kind: Role
+  name: trp-scaler
+  apiGroup: rbac.authorization.k8s.io

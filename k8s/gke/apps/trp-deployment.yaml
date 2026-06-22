@@ -13,6 +13,7 @@ spec:
       labels:
         app: blockchain-trp
     spec:
+      serviceAccountName: trp-sa
       nodeSelector:
         pool: apps
       containers:
