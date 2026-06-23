@@ -415,9 +415,10 @@ def create_block():
         nonce         = solucion["nonce"]
         hash_recibido = solucion["hash"]
 
-        # Verificar solución — usa la dificultad actual (puede haber cambiado si TrP activó fallback)
-        difficulty_actual = r.get("difficulty")
-        if not verify_hash(data, nonce, hash_recibido, difficulty_actual):
+        # Verificar contra la dificultad que le pedimos al worker. Si TrP la
+        # cambió mid-flight (fallback CPU on/off), la solución sigue siendo
+        # válida para el contrato original que firmamos en la tarea.
+        if not verify_hash(data, nonce, hash_recibido, difficulty):
             r.rpush("logs", json.dumps({
                 "timestamp": time.time(),
                 "event":     "solucion_invalida",
@@ -772,8 +773,28 @@ def _mine_one_block():
             return None
         nonce = solucion["nonce"]
         hash_recibido = solucion["hash"]
-        difficulty_actual = r.get("difficulty")
-        if not verify_hash(data, nonce, hash_recibido, difficulty_actual):
+        # Verificamos contra la dificultad que le pedimos al worker, NO la
+        # actual en Redis. Si el TrP cambió la dificultad (fallback CPU
+        # activado/restaurado) mientras el worker minaba, su solución sigue
+        # siendo válida para el contrato original. Releer aquí causaba
+        # invalid_pow_solution espurios cuando el gpu-server flapeaba.
+        if not verify_hash(data, nonce, hash_recibido, difficulty):
+            calculated_debug = hashlib.md5((data + str(nonce)).encode()).hexdigest()
+            r.rpush("logs", json.dumps({
+                "timestamp": time.time(),
+                "event": "pow_verify_failed_debug",
+                "task_id": task_id,
+                "nonce": nonce,
+                "hash_recibido": hash_recibido,
+                "hash_calculated": calculated_debug,
+                "hashes_match": calculated_debug == hash_recibido,
+                "difficulty_task": difficulty,
+                "difficulty_now": r.get("difficulty"),
+                "data_len": len(data),
+                "data_sha256": hashlib.sha256(data.encode()).hexdigest(),
+                "data_head": data[:200],
+                "data_tail": data[-200:],
+            }))
             for tx in pending_txs:
                 if tx.get("op_id"):
                     mark_operation_failed(tx["op_id"], "invalid_pow_solution")
