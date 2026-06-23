@@ -152,9 +152,18 @@ def purge_stale_solutions(task_id: str):
 # - Si la conexión muere, safe_basic_get/publish reconectan automáticamente.
 # Con esto, el único thread que toca RabbitMQ es el auto-miner.
 
-def wait_for_solution(task_id: str, timeout_seconds: int):
-    """Espera solo la soluciÃ³n de esta corrida y descarta mensajes viejos."""
+def wait_for_solution(task_id: str, timeout_seconds: int, data: str = None, difficulty: str = None):
+    """Espera la solución de esta corrida y descarta mensajes inválidos.
+
+    Si se pasan `data` y `difficulty`, también valida el hash de cada solución
+    recibida y descarta las que no cumplen (en vez de retornar y matar la op).
+    Antes una sola solución inválida hacía fallar toda la operación; ahora
+    seguimos esperando otra mientras dure el timeout. Esto cubre el caso de
+    workers que publican hashes inválidos esporádicamente (bug del binario
+    CUDA bajo concurrencia, corrupción en GPU, etc.).
+    """
     deadline = time.time() + timeout_seconds
+    verify_inline = data is not None and difficulty is not None
 
     while time.time() < deadline:
         result = safe_basic_get('soluciones')
@@ -183,6 +192,21 @@ def wait_for_solution(task_id: str, timeout_seconds: int):
                         "received_task_id": solution_task_id,
                     }))
                     continue
+
+                if verify_inline:
+                    nonce = solucion.get("nonce")
+                    hash_recibido = solucion.get("hash")
+                    if not verify_hash(data, nonce, hash_recibido, difficulty):
+                        safe_basic_ack(method.delivery_tag)
+                        r.rpush("logs", json.dumps({
+                            "timestamp": time.time(),
+                            "event": "solucion_descartada",
+                            "task_id": task_id,
+                            "reason": "invalid_pow",
+                            "nonce": nonce,
+                            "hash": hash_recibido,
+                        }))
+                        continue
 
                 safe_basic_ack(method.delivery_tag)
                 r.rpush("logs", json.dumps({
@@ -409,7 +433,7 @@ def create_block():
         }))
 
         # Esperar solución de cualquier worker
-        solucion = wait_for_solution(task_id, MINING_TIMEOUT_SECONDS)
+        solucion = wait_for_solution(task_id, MINING_TIMEOUT_SECONDS, data=data, difficulty=difficulty)
         if solucion is None:
             raise HTTPException(status_code=504, detail="Timeout esperando una soluciÃ³n de minado")
         nonce         = solucion["nonce"]
@@ -768,7 +792,7 @@ def _mine_one_block():
         safe_basic_publish('tareas_pool', json.dumps(tarea_completa))
 
         # Esperar solución.
-        solucion = wait_for_solution(task_id, MINING_TIMEOUT_SECONDS)
+        solucion = wait_for_solution(task_id, MINING_TIMEOUT_SECONDS, data=data, difficulty=difficulty)
         if solucion is None:
             return None
         nonce = solucion["nonce"]
