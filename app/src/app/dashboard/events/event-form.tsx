@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { CATEGORIES } from "@/lib/categories";
 import { ImageUpload } from "@/components/image-upload";
@@ -40,6 +40,12 @@ export function EventForm({ mode, initial, eventId }: Props) {
   const [form, setForm] = useState<EventFormInitial>({ ...EMPTY, ...initial });
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Guard sincrónico contra doble submit: `disabled={loading}` se aplica recién
+  // en el próximo render, así que un doble-click rápido (o Enter + click) puede
+  // disparar dos veces antes de que el botón se deshabilite. El ref se chequea
+  // de inmediato y solo se libera si hubo error (en éxito navegamos y queda
+  // bloqueado hasta que la página cambie).
+  const submittingRef = useRef(false);
 
   function update<K extends keyof EventFormInitial>(key: K, value: string) {
     setForm((f) => ({ ...f, [key]: value }));
@@ -47,6 +53,8 @@ export function EventForm({ mode, initial, eventId }: Props) {
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
+    if (submittingRef.current) return;
+    submittingRef.current = true;
     setLoading(true);
     setError(null);
     try {
@@ -73,9 +81,12 @@ export function EventForm({ mode, initial, eventId }: Props) {
       }
       router.push("/dashboard");
       router.refresh();
+      // No liberamos el guard ni reseteamos loading en éxito: navegamos al
+      // dashboard y el botón queda bloqueado hasta que la página cambie. Esto
+      // evita que el usuario clickee de nuevo durante la navegación.
     } catch (err) {
       setError(err instanceof Error ? err.message : "unknown_error");
-    } finally {
+      submittingRef.current = false;
       setLoading(false);
     }
   }
