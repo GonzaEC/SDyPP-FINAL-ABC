@@ -31,10 +31,20 @@ export default async function InventoryPage({
   const organizerKey = event.organizer.publicKey;
 
   // Conteos agregados (sin traer filas individuales — escala a 80k tickets).
-  const [emitted, sold, available, validated, listed, revenueAgg] = await Promise.all([
+  //
+  // Ojo con el modelo: al validarse en puerta, la entrada se transfiere de
+  // vuelta al organizador (ADR-005). Por eso una entrada validada vuelve a
+  // tener owner == organizer. Para "vendidas" no alcanza con mirar el dueño
+  // actual; hay que contar también las validadas (que se vendieron y se
+  // consumieron). Definiciones:
+  //   - soldActive: comprada, en manos del asistente, sin validar (owner != org, validatedAt null)
+  //   - validated:  ya escaneada en puerta (validatedAt != null)
+  //   - available:  todavía en stock del organizador, sin validar
+  //   - everSold = soldActive + validated  → lo que mostramos como "Vendidas"
+  const [emitted, soldActive, available, validated, listed, revenueAgg] = await Promise.all([
     prisma.ticket.count({ where: { eventId: id } }),
     prisma.ticket.count({
-      where: { eventId: id, ownerPublicKey: { not: organizerKey } },
+      where: { eventId: id, ownerPublicKey: { not: organizerKey }, validatedAt: null },
     }),
     prisma.ticket.count({
       where: { eventId: id, ownerPublicKey: organizerKey, validatedAt: null },
@@ -50,9 +60,9 @@ export default async function InventoryPage({
   ]);
 
   const revenue = revenueAgg._sum.amount ?? 0;
-  // "Vendidas en mano" = vendidas que todavía no se validaron.
-  const soldActive = Math.max(sold - validated, 0);
-  const sellThroughPct = emitted > 0 ? Math.round((sold / emitted) * 100) : 0;
+  // Vendidas alguna vez = en manos + validadas (las validadas también se vendieron).
+  const everSold = soldActive + validated;
+  const sellThroughPct = emitted > 0 ? Math.round((everSold / emitted) * 100) : 0;
 
   const date = new Date(event.datetime);
 
@@ -118,7 +128,7 @@ export default async function InventoryPage({
                   {sellThroughPct}%
                 </p>
                 <p className="text-[13px] text-[var(--muted)] mt-1.5">
-                  {sold.toLocaleString("es-AR")} de {emitted.toLocaleString("es-AR")} entradas
+                  {everSold.toLocaleString("es-AR")} de {emitted.toLocaleString("es-AR")} entradas
                 </p>
               </div>
             </div>
