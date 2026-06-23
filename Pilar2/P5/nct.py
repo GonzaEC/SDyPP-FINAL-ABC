@@ -121,17 +121,25 @@ def safe_queue_purge(queue: str):
     global channel
     with rabbit_lock:
         ensure_connection()
-        method = channel.queue_purge(queue=queue)
-        return getattr(method.method, "message_count", 0)
+        result = channel.queue_purge(queue=queue)
+        return getattr(result, "message_count", getattr(getattr(result, "method", None), "message_count", 0))
 
 def purge_stale_solutions(task_id: str):
-    purged = safe_queue_purge("soluciones")
-    if purged:
+    try:
+        purged = safe_queue_purge("soluciones")
+        if purged:
+            r.rpush("logs", json.dumps({
+                "timestamp": time.time(),
+                "event": "soluciones_sobrantes_purgadas",
+                "task_id": task_id,
+                "count": purged,
+            }))
+    except Exception as e:
         r.rpush("logs", json.dumps({
             "timestamp": time.time(),
-            "event": "soluciones_sobrantes_purgadas",
+            "event": "purga_soluciones_fallo",
             "task_id": task_id,
-            "count": purged,
+            "error": str(e),
         }))
 
 def rabbit_keepalive_loop():
@@ -409,7 +417,6 @@ def create_block():
 
         save_block(block)
         r.delete("pending_transactions")
-        purge_stale_solutions(task_id)
 
         r.rpush("logs", json.dumps({
             "timestamp": time.time(),
@@ -418,6 +425,7 @@ def create_block():
             "index":     block["index"],
             "hash":      block["block_hash"]
         }))
+        purge_stale_solutions(task_id)
 
         return block
 
@@ -755,7 +763,6 @@ def _mine_one_block():
 
         save_block(block)
         r.delete("pending_transactions")
-        purge_stale_solutions(task_id)
 
         # Aplicar efectos ticket-aware.
         confirmed_at = time.time()
@@ -770,6 +777,7 @@ def _mine_one_block():
             "hash": block["block_hash"],
             "tx_count": len(pending_txs),
         }))
+        purge_stale_solutions(task_id)
         return block
     finally:
         r.delete("minando")
