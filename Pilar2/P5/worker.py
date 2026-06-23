@@ -109,6 +109,7 @@ def callback(ch, method, properties, body):
         if nonce is not None:
             log.info(f"[{WORKER_ID}] ¡CONSEGUIDO! Nonce ganador encontrado: {nonce}")
             solucion = {
+                "task_id": tarea.get("task_id"),
                 "nonce": nonce,
                 "hash": hash_resultado
             }
@@ -119,6 +120,7 @@ def callback(ch, method, properties, body):
             )
             log_event(
                 r, "solucion_encontrada",
+                task_id=tarea.get("task_id"),
                 nonce=nonce, hash=hash_resultado,
                 start=tarea["start"], end=tarea["end"],
             )

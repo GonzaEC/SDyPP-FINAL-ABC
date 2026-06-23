@@ -119,11 +119,16 @@ def callback(ch, method, properties, body):
         channel.basic_publish(
             exchange='',
             routing_key='soluciones',
-            body=json.dumps({"nonce": nonce, "hash": hash_resultado})
+            body=json.dumps({
+                "task_id": tarea.get("task_id"),
+                "nonce": nonce,
+                "hash": hash_resultado,
+            })
         )
         log.info(f"[{WORKER_ID}] Nonce encontrado: {nonce}")
         log_event(
             "solucion_encontrada",
+            task_id=tarea.get("task_id"),
             nonce=nonce, hash=hash_resultado,
             start=tarea["start"], end=tarea["end"],
         )

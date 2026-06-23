@@ -179,6 +179,7 @@ CHUNK_SIZE  = 2_500_000   # cada sub-tarea cubre este rango
 # la fragmenta en chunks y publica cada uno en 'tareas'.
 # Cada chunk se publica como un mensaje separado en [tareas]. RabbitMQ los distribuye entre los workers disponibles automáticamente
 def subdivide_and_publish(tarea: dict):
+    task_id    = tarea.get("task_id")
     start      = tarea.get("start", 0)
     end        = tarea.get("end", TOTAL)
     difficulty = tarea.get("difficulty", r.get("difficulty"))
@@ -194,6 +195,7 @@ def subdivide_and_publish(tarea: dict):
         chunk_end   = min(chunk_start + CHUNK_SIZE - 1, end)
 
         subtarea = {
+            "task_id":    task_id,
             "difficulty": difficulty,
             "data":       data,
             "start":      chunk_start,
@@ -209,6 +211,7 @@ def subdivide_and_publish(tarea: dict):
     r.rpush("logs", json.dumps({
         "timestamp": time.time(),
         "event":     "trp_subdividio_tarea",
+        "task_id":   task_id,
         "chunks":    n_chunks,
         "difficulty": difficulty
     }))

@@ -10,6 +10,7 @@ import hashlib
 import base64
 import uuid
 import threading
+import os
 from cryptography.hazmat.primitives.asymmetric import ec
 from cryptography.hazmat.primitives.serialization import load_der_public_key
 from cryptography.hazmat.primitives import hashes
@@ -100,11 +101,55 @@ def safe_basic_publish(routing_key: str, body: str):
         ensure_connection()
         channel.basic_publish(exchange='', routing_key=routing_key, body=body)
 
+def wait_for_solution(task_id: str, timeout_seconds: int):
+    """Espera solo la soluciÃ³n de esta corrida y descarta mensajes viejos."""
+    deadline = time.time() + timeout_seconds
+
+    while time.time() < deadline:
+        result = safe_basic_get('soluciones')
+        if result is not None:
+            _, _, body = result
+            if body is not None:
+                try:
+                    solucion = json.loads(body)
+                except json.JSONDecodeError:
+                    r.rpush("logs", json.dumps({
+                        "timestamp": time.time(),
+                        "event": "solucion_descartada",
+                        "task_id": task_id,
+                        "reason": "invalid_json",
+                    }))
+                    continue
+
+                solution_task_id = solucion.get("task_id")
+                if solution_task_id != task_id:
+                    r.rpush("logs", json.dumps({
+                        "timestamp": time.time(),
+                        "event": "solucion_descartada",
+                        "task_id": task_id,
+                        "received_task_id": solution_task_id,
+                    }))
+                    continue
+
+                return solucion
+
+        time.sleep(MINING_POLL_INTERVAL_SECONDS)
+
+    r.rpush("logs", json.dumps({
+        "timestamp": time.time(),
+        "event": "minado_timeout",
+        "task_id": task_id,
+        "timeout_seconds": timeout_seconds,
+    }))
+    return None
+
 # -------------------------
 # CONFIGURACION
 # -------------------------
 
 TOTAL = 10000000
+MINING_TIMEOUT_SECONDS = int(os.getenv("MINING_TIMEOUT_SECONDS", "180"))
+MINING_POLL_INTERVAL_SECONDS = 0.5
 
 if not r.exists("difficulty"):
     r.set("difficulty", "00")
@@ -254,6 +299,7 @@ def create_block():
         }
 
         data = json.dumps(block, sort_keys=True)
+        task_id = str(uuid.uuid4())
 
         # Limpiar soluciones viejas
         while True:
@@ -266,6 +312,7 @@ def create_block():
 
         # Publicar UNA tarea al TrP — él se encarga de subdividir
         tarea_completa = {
+            "task_id":    task_id,
             "difficulty": difficulty,
             "data":       data,
             "start":      0,
@@ -276,19 +323,14 @@ def create_block():
         r.rpush("logs", json.dumps({
             "timestamp":  time.time(),
             "event":      "tarea_enviada_a_trp",
+            "task_id":    task_id,
             "difficulty": difficulty
         }))
 
         # Esperar solución de cualquier worker
-        body = None
-        while body is None:
-            result = safe_basic_get('soluciones')
-            if result is not None:
-                _, _, body = result
-            if body is None:
-                time.sleep(0.5)
-
-        solucion = json.loads(body)
+        solucion = wait_for_solution(task_id, MINING_TIMEOUT_SECONDS)
+        if solucion is None:
+            raise HTTPException(status_code=504, detail="Timeout esperando una soluciÃ³n de minado")
         nonce         = solucion["nonce"]
         hash_recibido = solucion["hash"]
 
@@ -298,6 +340,7 @@ def create_block():
             r.rpush("logs", json.dumps({
                 "timestamp": time.time(),
                 "event":     "solucion_invalida",
+                "task_id":   task_id,
                 "nonce":     nonce,
                 "hash":      hash_recibido
             }))
@@ -315,6 +358,7 @@ def create_block():
         r.rpush("logs", json.dumps({
             "timestamp": time.time(),
             "event":     "bloque_creado",
+            "task_id":   task_id,
             "index":     block["index"],
             "hash":      block["block_hash"]
         }))
@@ -610,6 +654,7 @@ def _mine_one_block():
             "previous_hash": ultimo["block_hash"],
         }
         data = json.dumps(block, sort_keys=True)
+        task_id = str(uuid.uuid4())
 
         while True:
             result = safe_basic_get('soluciones')
@@ -620,6 +665,7 @@ def _mine_one_block():
                 break
 
         tarea_completa = {
+            "task_id": task_id,
             "difficulty": difficulty,
             "data": data,
             "start": 0,
@@ -628,15 +674,9 @@ def _mine_one_block():
         safe_basic_publish('tareas_pool', json.dumps(tarea_completa))
 
         # Esperar solución.
-        body = None
-        while body is None:
-            result = safe_basic_get('soluciones')
-            if result is not None:
-                _, _, body = result
-            if body is None:
-                time.sleep(0.5)
-
-        solucion = json.loads(body)
+        solucion = wait_for_solution(task_id, MINING_TIMEOUT_SECONDS)
+        if solucion is None:
+            return None
         nonce = solucion["nonce"]
         hash_recibido = solucion["hash"]
         difficulty_actual = r.get("difficulty")
@@ -667,6 +707,7 @@ def _mine_one_block():
         r.rpush("logs", json.dumps({
             "timestamp": confirmed_at,
             "event": "bloque_creado",
+            "task_id": task_id,
             "index": block["index"],
             "hash": block["block_hash"],
             "tx_count": len(pending_txs),
