@@ -15,6 +15,7 @@ spec:
       containers:
         - name: gpu-server
           image: IMAGE_TAG
+          command: ["uvicorn", "gpu-server:app", "--host", "0.0.0.0", "--port", "8000"]
           ports:
             - containerPort: 8000
           env:
