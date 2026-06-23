@@ -56,7 +56,14 @@ export function EventActions({ eventId, status }: { eventId: string; status: Sta
   }
 
   if (status === "CANCELLED") {
-    return null;
+    return (
+      <Link
+        href={`/dashboard/events/${eventId}/inventario`}
+        className="btn btn-secondary btn-sm"
+      >
+        Ver inventario
+      </Link>
+    );
   }
 
   return (
@@ -81,14 +88,22 @@ export function EventActions({ eventId, status }: { eventId: string; status: Sta
           </>
         )}
         {isEmitted && (
-          <button
-            onClick={handleCancel}
-            disabled={busy}
-            className="btn btn-ghost btn-sm"
-            style={{ color: "var(--danger)" }}
-          >
-            Cancelar evento
-          </button>
+          <>
+            <Link
+              href={`/dashboard/events/${eventId}/inventario`}
+              className="btn btn-secondary btn-sm"
+            >
+              Ver inventario
+            </Link>
+            <button
+              onClick={handleCancel}
+              disabled={busy}
+              className="btn btn-ghost btn-sm"
+              style={{ color: "var(--danger)" }}
+            >
+              Cancelar evento
+            </button>
+          </>
         )}
       </div>
       {error && (

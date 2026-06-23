@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { Fingerprint, RefreshCw, CreditCard, Scale } from "lucide-react";
 import { prisma } from "@/lib/db";
 import { TeseraMockup } from "@/components/tesera-mockup";
 
@@ -65,7 +66,7 @@ export default async function Home() {
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden>
                   <path d="m5 12 5 5L20 7" stroke="var(--success)" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />
                 </svg>
-                ECDSA P-256
+                Entradas que no se falsifican
               </span>
             </div>
           </div>
@@ -90,14 +91,20 @@ export default async function Home() {
       <section className="border-y border-[var(--line)] bg-[var(--surface)]">
         <div className="mx-auto max-w-6xl px-4 sm:px-6 py-8 sm:py-10 grid grid-cols-2 sm:grid-cols-4 gap-6 sm:gap-8">
           {[
-            { k: "Curva", v: "ECDSA / P-256" },
-            { k: "Hash", v: "SHA-256" },
-            { k: "Cifrado", v: "AES-GCM 256" },
-            { k: "Derivación", v: "PBKDF2 / 250k" },
+            { Icon: Fingerprint, k: "Una entrada, un dueño", v: "Propiedad registrada en la cadena" },
+            { Icon: RefreshCw, k: "QR que rota", v: "Se renueva cada 30 segundos" },
+            { Icon: CreditCard, k: "Pago con MercadoPago", v: "Checkout protegido" },
+            { Icon: Scale, k: "Reventa justa", v: "Con tope de precio" },
           ].map((s) => (
-            <div key={s.k}>
-              <p className="text-[11px] sm:text-[12px] font-semibold text-[var(--muted)] uppercase tracking-wider">{s.k}</p>
-              <p className="mono text-[13px] sm:text-[15px] mt-1 text-[var(--ink)]">{s.v}</p>
+            <div key={s.k} className="flex flex-col gap-2">
+              <span
+                className="inline-flex items-center justify-center w-9 h-9 rounded-xl"
+                style={{ background: "var(--brand-soft)", color: "var(--brand)" }}
+              >
+                <s.Icon size={17} strokeWidth={2} />
+              </span>
+              <p className="text-[13px] sm:text-[14px] font-semibold text-[var(--ink)] leading-tight">{s.k}</p>
+              <p className="text-[12px] sm:text-[12.5px] text-[var(--muted)] leading-snug">{s.v}</p>
             </div>
           ))}
         </div>

@@ -197,8 +197,6 @@ export default async function EventDetail({ params }: { params: Promise<{ id: st
               ) : (
                 <Row k="Batch" v="pendiente" mono />
               )}
-              <Row k="Curva" v="secp256r1" mono />
-              <Row k="Firma" v="ECDSA / IEEE-P1363" mono />
             </dl>
           </div>
         </aside>

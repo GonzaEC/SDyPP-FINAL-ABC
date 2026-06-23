@@ -1,19 +1,105 @@
 "use client";
 
+// Los logs vienen del NCT (GET /logs). Cada entrada tiene la forma:
+//   { timestamp: number, event: string, ...campos según el tipo }
+// Ej: { event: "bloque_creado", task_id, index, hash, tx_count }
+//     { event: "solucion_tomada", task_id, nonce, hash }
+//     { event: "trp_subdividio_tarea", task_id, chunks, difficulty }
 interface LogEntry {
   timestamp?: number;
-  type?: string;
-  message?: string;
+  event?: string;
   [key: string]: unknown;
 }
 
-const TYPE_COLORS: Record<string, { dot: string; label: string }> = {
-  bloque_creado: { dot: "var(--success)", label: "Bloque creado" },
-  transaccion_recibida: { dot: "var(--brand)", label: "TX recibida" },
-  trp_subdividio_tarea: { dot: "var(--muted)", label: "TrP subdividio" },
-  solucion_invalida: { dot: "var(--danger)", label: "Solucion invalida" },
-  dificultad_cambiada: { dot: "var(--warn)", label: "Dificultad" },
+interface TypeConfig {
+  dot: string;
+  label: string;
+  // Construye una línea de detalle legible a partir de los campos del evento.
+  detail?: (e: LogEntry) => string | null;
+}
+
+const TYPE_CONFIG: Record<string, TypeConfig> = {
+  bloque_creado: {
+    dot: "var(--success)",
+    label: "Bloque minado",
+    detail: (e) =>
+      `#${e.index ?? "?"} · ${shortHash(e.hash)} · ${e.tx_count ?? 0} tx`,
+  },
+  transaccion_recibida: {
+    dot: "var(--brand)",
+    label: "TX recibida",
+    detail: () => null,
+  },
+  trp_subdividio_tarea: {
+    dot: "var(--muted)",
+    label: "TrP subdividió tarea",
+    detail: (e) => `${e.chunks ?? "?"} chunks · dificultad ${e.difficulty ?? "?"}`,
+  },
+  tarea_enviada_a_trp: {
+    dot: "var(--muted)",
+    label: "Tarea enviada al TrP",
+    detail: (e) => `dificultad ${e.difficulty ?? "?"}`,
+  },
+  solucion_tomada: {
+    dot: "var(--brand)",
+    label: "Solución encontrada",
+    detail: (e) => `nonce ${e.nonce ?? "?"} · ${shortHash(e.hash)}`,
+  },
+  soluciones_sobrantes_purgadas: {
+    dot: "var(--muted-2)",
+    label: "Soluciones purgadas",
+    detail: (e) => `${e.count ?? 0} descartadas`,
+  },
+  solucion_descartada: {
+    dot: "var(--warn)",
+    label: "Solución descartada",
+    detail: (e) => (e.received_task_id ? `task ajeno ${shortTask(e.received_task_id)}` : "fuera de tiempo"),
+  },
+  solucion_invalida: {
+    dot: "var(--danger)",
+    label: "Solución inválida",
+    detail: (e) => shortHash(e.hash),
+  },
+  minado_timeout: {
+    dot: "var(--danger)",
+    label: "Timeout de minado",
+    detail: (e) => `tras ${e.timeout_seconds ?? "?"}s`,
+  },
+  dificultad_cambiada: {
+    dot: "var(--warn)",
+    label: "Dificultad cambiada",
+    detail: (e) => `→ ${e.difficulty ?? "?"}`,
+  },
+  fallback_cpu_activado: {
+    dot: "var(--warn)",
+    label: "Fallback CPU activado",
+    detail: (e) => `dificultad → ${e.difficulty_nueva ?? "?"}`,
+  },
+  fallback_cpu_restaurado: {
+    dot: "var(--success)",
+    label: "GPU restaurada",
+    detail: (e) => `dificultad → ${e.difficulty_restaurada ?? "?"}`,
+  },
+  auto_miner_error: {
+    dot: "var(--danger)",
+    label: "Error del auto-miner",
+    detail: (e) => truncate(String(e.error ?? "")),
+  },
 };
+
+function shortHash(h: unknown): string {
+  const s = typeof h === "string" ? h : "";
+  return s ? s.slice(0, 10) + "…" : "—";
+}
+
+function shortTask(t: unknown): string {
+  const s = typeof t === "string" ? t : "";
+  return s ? s.slice(0, 8) : "—";
+}
+
+function truncate(s: string, n = 48): string {
+  return s.length > n ? s.slice(0, n) + "…" : s;
+}
 
 function formatTime(ts: number) {
   try {
@@ -39,6 +125,7 @@ export function EventLog({ logs }: { logs: LogEntry[] | null }) {
     );
   }
 
+  // Más recientes primero, máximo 50.
   const recent = [...logs].reverse().slice(0, 50);
 
   return (
@@ -50,7 +137,12 @@ export function EventLog({ logs }: { logs: LogEntry[] | null }) {
       <div className="card p-4 sm:p-6">
         <ul className="space-y-3">
           {recent.map((entry, i) => {
-            const cfg = TYPE_COLORS[entry.type ?? ""] ?? { dot: "var(--muted)", label: entry.type ?? "evento" };
+            const type = entry.event ?? "";
+            const cfg = TYPE_CONFIG[type] ?? {
+              dot: "var(--muted)",
+              label: type || "evento",
+            };
+            const detail = cfg.detail?.(entry) ?? null;
             return (
               <li key={i} className="flex gap-3 items-start text-[13px]">
                 <span
@@ -66,8 +158,10 @@ export function EventLog({ logs }: { logs: LogEntry[] | null }) {
                       </span>
                     )}
                   </div>
-                  {entry.message && (
-                    <p className="text-[12px] text-[var(--muted)] mt-0.5 truncate">{entry.message}</p>
+                  {detail && (
+                    <p className="text-[12px] text-[var(--muted)] mt-0.5 truncate mono">
+                      {detail}
+                    </p>
                   )}
                 </div>
               </li>

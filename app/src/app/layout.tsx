@@ -115,11 +115,11 @@ export default async function RootLayout({ children }: { children: React.ReactNo
                 </ul>
               </div>
               <div>
-                <p className="font-semibold text-[var(--ink)] mb-2">Stack</p>
-                <ul className="space-y-1.5 text-[var(--muted)] mono">
-                  <li>Next.js 16</li>
-                  <li>ECDSA P-256</li>
-                  <li>Prisma 7 · Postgres</li>
+                <p className="font-semibold text-[var(--ink)] mb-2">Explorar</p>
+                <ul className="space-y-1.5 text-[var(--muted)]">
+                  <li><Link href="/my-tickets" className="hover:text-[var(--ink)] transition-colors">Mis pases</Link></li>
+                  <li><Link href="/scan" className="hover:text-[var(--ink)] transition-colors">Validar entrada</Link></li>
+                  <li><Link href="/panel" className="hover:text-[var(--ink)] transition-colors">Panel de la cadena</Link></li>
                 </ul>
               </div>
             </div>
