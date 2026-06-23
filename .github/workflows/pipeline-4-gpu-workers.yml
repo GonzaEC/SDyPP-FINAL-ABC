@@ -6,6 +6,7 @@ on:
     paths:
       - "Pilar2/P5/worker.py"
       - "Pilar2/P5/gpu-server.py"
+      - "Pilar2/P5/brute_force_range.cu"
       - "Pilar2/P5/Dockerfile.worker"
       - "k8s/profesor/**"
   workflow_dispatch:
