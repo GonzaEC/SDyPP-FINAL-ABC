@@ -284,6 +284,55 @@ h1, h2, h3, h4 { letter-spacing: -0.022em; font-weight: 600; }
 }
 
 /* ─────────────────────────────────────────────────────────────────────────
+   Wallet metaphor (/my-tickets)
+   Mazo apilado, perforación de boarding pass, sello "USADO" para tickets
+   validados. Ver plan en docs/oculto/pasos-a-seguir.md.
+   ───────────────────────────────────────────────────────────────────────── */
+
+.pass-deck { position: relative; }
+.pass-deck::before,
+.pass-deck::after {
+  content: ""; position: absolute; inset: 0;
+  border-radius: var(--radius);
+  border: 1px solid var(--line);
+  background: var(--bg);
+  z-index: -1;
+  box-shadow: var(--shadow-xs);
+}
+.pass-deck::before {
+  transform: translateY(5px) scaleX(0.985);
+  opacity: 0.7;
+}
+.pass-deck::after {
+  transform: translateY(10px) scaleX(0.97);
+  opacity: 0.4;
+}
+
+/* Separador "perforado" estilo boarding pass — puntitos verticales */
+.pass-perforation {
+  width: 2px;
+  background-image: radial-gradient(circle, var(--line-strong) 1px, transparent 1px);
+  background-size: 2px 8px;
+  background-repeat: repeat-y;
+  background-position: center;
+}
+
+/* Sello "USADO" para tickets validados — diagonal, mono, gris */
+.stamp-used {
+  position: absolute; right: 14px; top: 14px;
+  z-index: 5;
+  font-family: var(--font-mono);
+  font-weight: 700; font-size: 10px;
+  color: var(--muted);
+  border: 1.5px solid var(--muted);
+  padding: 2px 7px; border-radius: 4px;
+  transform: rotate(-8deg);
+  letter-spacing: 0.14em;
+  opacity: 0.75;
+  pointer-events: none;
+}
+
+/* ─────────────────────────────────────────────────────────────────────────
    Tesera mockup card (clean modern, no holo, no perforation)
    ───────────────────────────────────────────────────────────────────────── */
 

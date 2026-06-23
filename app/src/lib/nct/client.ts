@@ -453,10 +453,27 @@ export async function getOperationStatus(opId: string): Promise<{
 // que se mantiene consistente via settleDueOperations.
 // ============================================================================
 
-export async function getTicketsByOwner(publicKey: string): Promise<TicketOwnership[]> {
+export interface GetTicketsByOwnerOptions {
+  /**
+   * Cuando se pasa, excluye tickets cuyo evento fue organizado por este userId.
+   * Sirve para que /my-tickets muestre solo entradas adquiridas, no el stock
+   * recién emitido del propio organizador (puede ser miles, no hace sentido
+   * como "pase personal"). El stock se ve por separado como inventario.
+   */
+  excludeOwnedEventsOf?: string;
+}
+
+export async function getTicketsByOwner(
+  publicKey: string,
+  options?: GetTicketsByOwnerOptions,
+): Promise<TicketOwnership[]> {
   await settleDueOperations();
+  const where: Record<string, unknown> = { ownerPublicKey: publicKey };
+  if (options?.excludeOwnedEventsOf) {
+    where.event = { organizerId: { not: options.excludeOwnedEventsOf } };
+  }
   const tickets = await prisma.ticket.findMany({
-    where: { ownerPublicKey: publicKey },
+    where,
     orderBy: [{ eventId: "asc" }, { ticketNumber: "asc" }],
   });
   return tickets.map((t) => ({

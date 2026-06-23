@@ -32,6 +32,8 @@ def connect_redis():
 r = connect_redis()
 
 app = FastAPI()
+RABBIT_HEARTBEAT_SECONDS = int(os.getenv("RABBIT_HEARTBEAT_SECONDS", "180"))
+RABBIT_KEEPALIVE_INTERVAL_SECONDS = int(os.getenv("RABBIT_KEEPALIVE_INTERVAL_SECONDS", "15"))
 
 def rabbitmq_ssl_context():
     ctx = ssl_mod.create_default_context()
@@ -47,7 +49,7 @@ def connect_rabbitmq():
                     "rabbitmq",
                     port=5671,
                     ssl_options=rabbitmq_ssl_context(),
-                    heartbeat=30,
+                    heartbeat=RABBIT_HEARTBEAT_SECONDS,
                     blocked_connection_timeout=300
                 )
             )
@@ -100,6 +102,17 @@ def safe_basic_publish(routing_key: str, body: str):
         print(f"Error en basic_publish, reconectando: {e}")
         ensure_connection()
         channel.basic_publish(exchange='', routing_key=routing_key, body=body)
+
+def rabbit_keepalive_loop():
+    """Mantiene vivo el heartbeat incluso cuando NCT queda ocioso."""
+    while True:
+        try:
+            ensure_connection()
+        except Exception as e:
+            print(f"Error en keepalive de RabbitMQ: {e}")
+        time.sleep(RABBIT_KEEPALIVE_INTERVAL_SECONDS)
+
+threading.Thread(target=rabbit_keepalive_loop, daemon=True).start()
 
 def wait_for_solution(task_id: str, timeout_seconds: int):
     """Espera solo la soluciÃ³n de esta corrida y descarta mensajes viejos."""
