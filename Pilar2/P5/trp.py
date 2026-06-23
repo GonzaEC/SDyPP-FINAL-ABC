@@ -122,53 +122,62 @@ def is_gpu_server_alive() -> bool:
 # Esta funcion corre en background. Cada 15s revisa si el gpu-server sigue vivo.
 # Si no responde: reduce la dificultad y dispara el fallback CPU en la nube (GCP).
 # Si vuelve: restaura la dificultad y destruye las instancias CPU que ya no hacen falta.
-def monitor_loop():
-    in_fallback = False
+#
+# Diseñada para correr en N réplicas del TrP a la vez:
+# - El estado "estamos en fallback" vive en Redis (key FALLBACK_MODE_KEY), no
+#   en memoria. Cualquier réplica puede leerlo.
+# - Las transiciones (activar/restaurar) se hacen con SET NX atómico: solo
+#   el primer TrP que detecta el cambio ejecuta el trabajo. Los demás ven el
+#   flag ya cambiado y no hacen nada (evita guardar difficulty_original con
+#   valor ya pisado, evita disparar scale_cpu_workers en duplicado, evita
+#   doble log).
+FALLBACK_MODE_KEY = "trp:fallback_active"
 
+def activate_fallback():
+    # SET NX: solo el primer TrP en detectar la caída entra al if.
+    if not r.set(FALLBACK_MODE_KEY, "1", nx=True):
+        return False
+    log.warning("gpu-server no responde — activando fallback CPU")
+    original = r.get("difficulty")
+    # NX en el save del original: si otro TrP ya lo guardó (no debería pasar
+    # con el flag NX de arriba, pero es defensa en profundidad), no lo pisamos.
+    if original and original != FALLBACK_DIFFICULTY:
+        r.set(ORIGINAL_DIFFICULTY_KEY, original, nx=True)
+    r.set("difficulty", FALLBACK_DIFFICULTY)
+    r.rpush("logs", json.dumps({
+        "timestamp": time.time(),
+        "event": "fallback_cpu_activado",
+        "difficulty_anterior": original,
+        "difficulty_nueva": FALLBACK_DIFFICULTY,
+    }))
+    scale_cpu_workers(CPU_WORKER_REPLICAS)
+    return True
+
+def restore_from_fallback():
+    # Solo el primer TrP en detectar el regreso entra (DEL devuelve 1 si borró).
+    if r.delete(FALLBACK_MODE_KEY) == 0:
+        return False
+    log.info("gpu-server activo de nuevo — restaurando modo GPU")
+    original = r.get(ORIGINAL_DIFFICULTY_KEY)
+    if original:
+        r.set("difficulty", original)
+        r.delete(ORIGINAL_DIFFICULTY_KEY)
+    r.rpush("logs", json.dumps({
+        "timestamp": time.time(),
+        "event": "fallback_cpu_restaurado",
+        "difficulty_restaurada": original,
+    }))
+    scale_cpu_workers(0)
+    return True
+
+def monitor_loop():
     while True:
         gpu_alive = is_gpu_server_alive()
-
+        in_fallback = r.exists(FALLBACK_MODE_KEY) == 1
         if not gpu_alive and not in_fallback:
-            log.warning("gpu-server no responde — activando fallback CPU")
-
-            original = r.get("difficulty")
-            if original:
-                r.set(ORIGINAL_DIFFICULTY_KEY, original)
-            r.set("difficulty", FALLBACK_DIFFICULTY)
-
-            # Dejamos constancia del cambio en el historial compartido (Redis
-            # "logs", el mismo que expone GET /logs en el NCT). Antes esta
-            # transición solo se veía con un print en la consola del pod TrP;
-            # ahora también queda visible desde afuera sin tener que mirar
-            # kubectl logs del TrP puntualmente.
-            r.rpush("logs", json.dumps({
-                "timestamp": time.time(),
-                "event": "fallback_cpu_activado",
-                "difficulty_anterior": original,
-                "difficulty_nueva": FALLBACK_DIFFICULTY,
-            }))
-
-            scale_cpu_workers(CPU_WORKER_REPLICAS)
-
-            in_fallback = True
-
+            activate_fallback()
         elif gpu_alive and in_fallback:
-            log.info("gpu-server activo de nuevo — restaurando modo GPU")
-
-            original = r.get(ORIGINAL_DIFFICULTY_KEY)
-            if original:
-                r.set("difficulty", original)
-
-            r.rpush("logs", json.dumps({
-                "timestamp": time.time(),
-                "event": "fallback_cpu_restaurado",
-                "difficulty_restaurada": original,
-            }))
-
-            scale_cpu_workers(0)
-
-            in_fallback = False
-
+            restore_from_fallback()
         time.sleep(15)
 
 threading.Thread(target=monitor_loop, daemon=True).start()
