@@ -35,5 +35,15 @@ jobs:
       - name: Deploy namespace
         run: kubectl apply -f k8s/gke/namespaces.yaml
 
+      - name: Sync RabbitMQ TLS secret from GitHub Secrets
+        run: |
+          echo "${{ secrets.RABBITMQ_TLS_CERT_B64 }}" | base64 -d > /tmp/rabbitmq-cert.pem
+          echo "${{ secrets.RABBITMQ_TLS_KEY_B64 }}"  | base64 -d > /tmp/rabbitmq-key.pem
+          kubectl create secret generic rabbitmq-tls -n sdypp \
+            --from-file=rabbitmq-cert.pem=/tmp/rabbitmq-cert.pem \
+            --from-file=rabbitmq-key.pem=/tmp/rabbitmq-key.pem \
+            --dry-run=client -o yaml | kubectl apply -f -
+          rm -f /tmp/rabbitmq-cert.pem /tmp/rabbitmq-key.pem
+
       - name: Deploy infrastructure services
         run: kubectl apply -f k8s/gke/infra/

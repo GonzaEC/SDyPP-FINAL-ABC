@@ -89,6 +89,13 @@ jobs:
           cluster_name: sdypp-cluster
           location: us-central1-a
 
+      - name: Sync app secrets from GitHub Secrets
+        run: |
+          kubectl create secret generic app-secrets -n sdypp \
+            --from-literal=MP_ACCESS_TOKEN="${{ secrets.MP_ACCESS_TOKEN }}" \
+            --from-literal=SESSION_PASSWORD="${{ secrets.SESSION_PASSWORD }}" \
+            --dry-run=client -o yaml | kubectl apply -f -
+
       - name: Update image tags and deploy
         run: |
           REGISTRY="${{ env.REGION }}-docker.pkg.dev/${{ secrets.GCP_PROJECT_ID }}/${{ env.REPO }}"
