@@ -30,22 +30,23 @@ GPU_SERVER_URL = os.getenv("GPU_SERVICE_URL", "http://gpu-service-internal:8000/
 
 
 def connect_redis():
-    while True:
-        try:
-            client = redis.Redis(host="redis", port=6379, decode_responses=True)
-            client.ping()
-            log.info("Conectado a Redis")
-            return client
-        except Exception:
-            log.warning("Esperando Redis...")
-            time.sleep(3)
+    try:
+        client = redis.Redis(host=os.getenv("REDIS_HOST", "redis"), port=6379, decode_responses=True)
+        client.ping()
+        log.info("Conectado a Redis")
+        return client
+    except Exception:
+        log.warning("Redis no disponible — logs solo por consola")
+        return None
 
 
 def log_event(r, event: str, **fields):
-    """Mismo patrón de log centralizado que usan NCT y TrP: escribe en la
-    clave 'logs' de Redis (visible vía GET /logs) y también en consola."""
     entry = {"timestamp": time.time(), "event": event, "worker_id": WORKER_ID, "tipo": "gpu", **fields}
-    r.rpush("logs", json.dumps(entry))
+    if r:
+        try:
+            r.rpush("logs", json.dumps(entry))
+        except Exception:
+            pass
     log.info(f"event={event} " + " ".join(f"{k}={v}" for k, v in fields.items()))
 
 
