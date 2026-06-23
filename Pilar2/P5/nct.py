@@ -117,6 +117,23 @@ def safe_basic_ack(delivery_tag):
         ensure_connection()
         channel.basic_ack(delivery_tag=delivery_tag)
 
+def safe_queue_purge(queue: str):
+    global channel
+    with rabbit_lock:
+        ensure_connection()
+        method = channel.queue_purge(queue=queue)
+        return getattr(method.method, "message_count", 0)
+
+def purge_stale_solutions(task_id: str):
+    purged = safe_queue_purge("soluciones")
+    if purged:
+        r.rpush("logs", json.dumps({
+            "timestamp": time.time(),
+            "event": "soluciones_sobrantes_purgadas",
+            "task_id": task_id,
+            "count": purged,
+        }))
+
 def rabbit_keepalive_loop():
     """Mantiene vivo el heartbeat incluso cuando NCT queda ocioso."""
     while True:
@@ -392,6 +409,7 @@ def create_block():
 
         save_block(block)
         r.delete("pending_transactions")
+        purge_stale_solutions(task_id)
 
         r.rpush("logs", json.dumps({
             "timestamp": time.time(),
@@ -737,6 +755,7 @@ def _mine_one_block():
 
         save_block(block)
         r.delete("pending_transactions")
+        purge_stale_solutions(task_id)
 
         # Aplicar efectos ticket-aware.
         confirmed_at = time.time()
