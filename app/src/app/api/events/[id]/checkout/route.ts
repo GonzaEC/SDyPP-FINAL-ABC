@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
+import { settleDueOperations } from "@/lib/nct/client";
 import { getSession } from "@/lib/session";
 import { isMpConfigured, createPreference } from "@/lib/payments/mercadopago";
 
@@ -13,6 +14,10 @@ export async function POST(_req: Request, { params }: { params: Promise<{ id: st
   if (!session.userId || !session.publicKey) {
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   }
+  const buyerUserId = session.userId;
+  const buyerPublicKey = session.publicKey;
+
+  await settleDueOperations();
 
   const event = await prisma.event.findUnique({
     where: { id: eventId },
@@ -22,37 +27,57 @@ export async function POST(_req: Request, { params }: { params: Promise<{ id: st
   if (event.status !== "EMITTED") {
     return NextResponse.json({ error: "event_not_emitted", message: "El evento no está emitido." }, { status: 409 });
   }
-  if (event.organizer.publicKey === session.publicKey) {
+  if (event.organizer.publicKey === buyerPublicKey) {
     return NextResponse.json({ error: "cannot_buy_own_event", message: "No podés comprar entradas de tu propio evento." }, { status: 400 });
   }
 
-  // Reservar un ticket disponible (del organizador, no validado) para este pago.
-  // Excluimos validatedAt != null: una entrada consumida no se revende (ADR-015).
-  const available = await prisma.ticket.findFirst({
-    where: {
-      eventId,
-      ownerPublicKey: event.organizer.publicKey,
-      validatedAt: null,
-    },
-    orderBy: { ticketNumber: "asc" },
+  const user = await prisma.user.findUnique({ where: { id: buyerUserId } });
+  if (!user) return NextResponse.json({ error: "user_not_found" }, { status: 404 });
+
+  const reservation = await prisma.$transaction(async (tx) => {
+    const activeReservations = await tx.payment.findMany({
+        where: {
+          eventId,
+          listingId: null,
+          ticketId: { not: null },
+          status: { in: ["PENDING", "APPROVED"] },
+        },
+        select: { ticketId: true },
+      });
+
+    const reservedTicketIds = activeReservations
+      .map((row) => row.ticketId)
+      .filter((ticketId): ticketId is string => Boolean(ticketId));
+
+    const ticket = await tx.ticket.findFirst({
+      where: {
+        eventId,
+        ownerPublicKey: event.organizer.publicKey,
+        validatedAt: null,
+        ...(reservedTicketIds.length > 0 ? { id: { notIn: reservedTicketIds } } : {}),
+      },
+      orderBy: { ticketNumber: "asc" },
+    });
+    if (!ticket) return null;
+
+    const payment = await tx.payment.create({
+      data: {
+        userId: buyerUserId,
+        eventId,
+        ticketId: ticket.id,
+        amount: event.price,
+        status: "PENDING",
+      },
+    });
+
+    return { payment, ticket };
   });
-  if (!available) {
+
+  if (!reservation) {
     return NextResponse.json({ error: "sold_out", message: "Agotado, no quedan entradas." }, { status: 409 });
   }
 
-  const user = await prisma.user.findUnique({ where: { id: session.userId } });
-  if (!user) return NextResponse.json({ error: "user_not_found" }, { status: 404 });
-
-  // Crear el Payment en estado PENDING.
-  const payment = await prisma.payment.create({
-    data: {
-      userId: session.userId,
-      eventId,
-      ticketId: available.id,
-      amount: event.price,
-      status: "PENDING",
-    },
-  });
+  const { payment, ticket: available } = reservation;
 
   // Si MP no está configurado, devolvemos un flag para que el cliente
   // haga el flujo mock (POST /api/events/[id]/buy como antes).

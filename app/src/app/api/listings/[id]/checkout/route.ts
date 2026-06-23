@@ -13,6 +13,8 @@ export async function POST(_req: Request, { params }: { params: Promise<{ id: st
   if (!session.userId || !session.publicKey) {
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   }
+  const buyerUserId = session.userId;
+  const buyerPublicKey = session.publicKey;
 
   await settleDueOperations();
 
@@ -34,7 +36,7 @@ export async function POST(_req: Request, { params }: { params: Promise<{ id: st
       { status: 409 },
     );
   }
-  if (listing.sellerId === session.userId) {
+  if (listing.sellerId === buyerUserId) {
     return NextResponse.json(
       { error: "cannot_buy_own_listing", message: "No podés comprar tu propia reventa." },
       { status: 400 },
@@ -53,28 +55,47 @@ export async function POST(_req: Request, { params }: { params: Promise<{ id: st
     );
   }
 
-  const user = await prisma.user.findUnique({ where: { id: session.userId } });
+  const user = await prisma.user.findUnique({ where: { id: buyerUserId } });
   if (!user) return NextResponse.json({ error: "user_not_found" }, { status: 404 });
 
-  // Crear Payment con listingId para que el webhook sepa que es reventa.
-  const payment = await prisma.payment.create({
-    data: {
-      userId: session.userId,
-      eventId: listing.ticket.eventId,
-      ticketId: listing.ticket.id,
-      listingId: listing.id,
-      amount: listing.price,
-      currency: listing.currency,
-      status: "PENDING",
-    },
-  });
+  const payment = await prisma.$transaction(async (tx) => {
+      const activePayment = await tx.payment.findFirst({
+        where: {
+          listingId: listing.id,
+          status: { in: ["PENDING", "APPROVED"] },
+        },
+        select: { id: true },
+      });
+      if (activePayment) {
+        return null;
+      }
+
+      return tx.payment.create({
+        data: {
+          userId: buyerUserId,
+          eventId: listing.ticket.eventId,
+          ticketId: listing.ticket.id,
+          listingId: listing.id,
+          amount: listing.price,
+          currency: listing.currency,
+          status: "PENDING",
+        },
+      });
+    });
+
+  if (!payment) {
+    return NextResponse.json(
+      { error: "listing_checkout_in_progress", message: "Esta reventa ya estÃ¡ siendo procesada por otra compra." },
+      { status: 409 },
+    );
+  }
 
   // Fallback mock: si MP no configurado, transferir directo sin pago.
   if (!isMpConfigured()) {
     const result = await submitTransfer({
       ticketId: listing.ticket.id,
       fromPublicKey: listing.seller.publicKey,
-      toPublicKey: session.publicKey,
+      toPublicKey: buyerPublicKey,
       reason: "resale",
       signedPayload: { type: "resale_mock", listingId: listing.id },
       signature: "mock-signature-resale",
@@ -92,7 +113,7 @@ export async function POST(_req: Request, { params }: { params: Promise<{ id: st
         where: { id: listing.id },
         data: {
           status: "SOLD",
-          buyerId: session.userId,
+          buyerId: buyerUserId,
           paymentId: payment.id,
           resolvedAt: new Date(),
         },

@@ -2,32 +2,17 @@
 
 interface LogEntry {
   timestamp?: number;
-  event?: string;
   type?: string;
   message?: string;
-  worker_id?: string;
-  nonce?: number;
-  hash?: string;
-  index?: number;
-  chunks?: number;
-  difficulty?: string;
-  difficulty_anterior?: string;
-  difficulty_nueva?: string;
-  difficulty_restaurada?: string;
   [key: string]: unknown;
 }
 
 const TYPE_COLORS: Record<string, { dot: string; label: string }> = {
   bloque_creado: { dot: "var(--success)", label: "Bloque creado" },
-  solucion_encontrada: { dot: "var(--brand)", label: "Solucion encontrada" },
   transaccion_recibida: { dot: "var(--brand)", label: "TX recibida" },
-  trp_subdividio_tarea: { dot: "var(--muted)", label: "TrP subdividió" },
-  solucion_invalida: { dot: "var(--danger)", label: "Solución inválida" },
+  trp_subdividio_tarea: { dot: "var(--muted)", label: "TrP subdividio" },
+  solucion_invalida: { dot: "var(--danger)", label: "Solucion invalida" },
   dificultad_cambiada: { dot: "var(--warn)", label: "Dificultad" },
-  fallback_cpu_activado: { dot: "var(--warn)", label: "Fallback CPU" },
-  fallback_cpu_restaurado: { dot: "var(--success)", label: "GPU restaurada" },
-  minado_timeout: { dot: "var(--danger)", label: "Timeout de minado" },
-  solucion_descartada: { dot: "var(--warn)", label: "Solucion descartada" },
 };
 
 function formatTime(ts: number) {
@@ -40,48 +25,6 @@ function formatTime(ts: number) {
   } catch {
     return String(ts);
   }
-}
-
-function getEventType(entry: LogEntry) {
-  return entry.event ?? entry.type ?? "evento";
-}
-
-function buildDetails(entry: LogEntry) {
-  const eventType = getEventType(entry);
-
-  if (entry.message) return entry.message;
-
-  if (eventType === "solucion_encontrada") {
-    const parts = [];
-    if (entry.worker_id) parts.push(`worker ${entry.worker_id}`);
-    if (typeof entry.nonce === "number") parts.push(`nonce ${entry.nonce.toLocaleString("es-AR")}`);
-    if (typeof entry.hash === "string") parts.push(`hash ${entry.hash.slice(0, 12)}`);
-    return parts.join(" · ");
-  }
-
-  if (eventType === "bloque_creado") {
-    const parts = [];
-    if (typeof entry.index === "number") parts.push(`bloque #${entry.index}`);
-    if (typeof entry.hash === "string") parts.push(`hash ${entry.hash.slice(0, 12)}`);
-    return parts.join(" · ");
-  }
-
-  if (eventType === "trp_subdividio_tarea") {
-    const parts = [];
-    if (typeof entry.chunks === "number") parts.push(`${entry.chunks} chunks`);
-    if (typeof entry.difficulty === "string") parts.push(`dificultad ${entry.difficulty}`);
-    return parts.join(" · ");
-  }
-
-  if (eventType === "fallback_cpu_activado") {
-    return `dificultad ${entry.difficulty_anterior ?? "?"} -> ${entry.difficulty_nueva ?? "?"}`;
-  }
-
-  if (eventType === "fallback_cpu_restaurado") {
-    return `restaurada a ${entry.difficulty_restaurada ?? "?"}`;
-  }
-
-  return "";
 }
 
 export function EventLog({ logs }: { logs: LogEntry[] | null }) {
@@ -107,9 +50,7 @@ export function EventLog({ logs }: { logs: LogEntry[] | null }) {
       <div className="card p-4 sm:p-6">
         <ul className="space-y-3">
           {recent.map((entry, i) => {
-            const eventType = getEventType(entry);
-            const cfg = TYPE_COLORS[eventType] ?? { dot: "var(--muted)", label: eventType };
-            const details = buildDetails(entry);
+            const cfg = TYPE_COLORS[entry.type ?? ""] ?? { dot: "var(--muted)", label: entry.type ?? "evento" };
             return (
               <li key={i} className="flex gap-3 items-start text-[13px]">
                 <span
@@ -125,8 +66,8 @@ export function EventLog({ logs }: { logs: LogEntry[] | null }) {
                       </span>
                     )}
                   </div>
-                  {details && (
-                    <p className="text-[12px] text-[var(--muted)] mt-0.5 break-words">{details}</p>
+                  {entry.message && (
+                    <p className="text-[12px] text-[var(--muted)] mt-0.5 truncate">{entry.message}</p>
                   )}
                 </div>
               </li>

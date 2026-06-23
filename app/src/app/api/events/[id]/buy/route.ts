@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
+import { settleDueOperations, submitTransfer } from "@/lib/nct/client";
 import { getSession } from "@/lib/session";
-import { submitTransfer } from "@/lib/nct/client";
 
 // Mock de compra: encuentra una entrada disponible del organizador y se la transfiere
 // al comprador logueado. En producción, este endpoint se dispararía DESPUÉS de confirmar
@@ -12,6 +12,9 @@ export async function POST(_req: Request, { params }: { params: Promise<{ id: st
   if (!session.userId || !session.publicKey) {
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   }
+  const buyerPublicKey = session.publicKey;
+
+  await settleDueOperations();
 
   const event = await prisma.event.findUnique({
     where: { id: eventId },
@@ -21,7 +24,7 @@ export async function POST(_req: Request, { params }: { params: Promise<{ id: st
   if (event.status !== "EMITTED") {
     return NextResponse.json({ error: "event_not_emitted" }, { status: 409 });
   }
-  if (event.organizer.publicKey === session.publicKey) {
+  if (event.organizer.publicKey === buyerPublicKey) {
     return NextResponse.json({ error: "cannot_buy_own_event" }, { status: 400 });
   }
 
@@ -50,7 +53,7 @@ export async function POST(_req: Request, { params }: { params: Promise<{ id: st
   const result = await submitTransfer({
     ticketId: available.id,
     fromPublicKey: event.organizer.publicKey,
-    toPublicKey: session.publicKey,
+    toPublicKey: buyerPublicKey,
     reason: "purchase",
     signedPayload: { type: "purchase_mock", ticketId: available.id },
     signature: "mock-signature-pending-organizer-key-delegation",
