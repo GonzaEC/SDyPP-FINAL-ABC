@@ -35,7 +35,13 @@ def connect_rabbitmq():
     while True:
         try:
             connection = pika.BlockingConnection(
-                pika.ConnectionParameters("rabbitmq", port=5671, ssl_options=rabbitmq_ssl_context())
+                pika.ConnectionParameters(
+                    "rabbitmq",
+                    port=5671,
+                    ssl_options=rabbitmq_ssl_context(),
+                    heartbeat=180,
+                    blocked_connection_timeout=300,
+                )
             )
             log.info("Conectado a RabbitMQ (TLS)")
             return connection
