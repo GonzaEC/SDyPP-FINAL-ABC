@@ -32,15 +32,22 @@ spec:
             limits:
               cpu: 300m
               memory: 384Mi
+          # Probes laxas: /api/health hace un SELECT 1 a Postgres y bajo carga
+          # puede tardar más de 1s. Con probes agresivas, cualquier hipo de DB
+          # mata el pod (cascade observado en producción cuando Postgres reinició).
           livenessProbe:
             httpGet:
               path: /api/health
               port: 3000
             initialDelaySeconds: 30
-            periodSeconds: 15
+            periodSeconds: 30
+            timeoutSeconds: 5
+            failureThreshold: 5
           readinessProbe:
             httpGet:
               path: /api/health
               port: 3000
             initialDelaySeconds: 15
-            periodSeconds: 10
+            periodSeconds: 15
+            timeoutSeconds: 5
+            failureThreshold: 3
