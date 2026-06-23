@@ -34,7 +34,7 @@ __device__ void md5(const uint8_t *initial_msg, size_t initial_len, uint8_t *dig
     size_t new_len = initial_len + 1;
     while (new_len % 64 != 56) new_len++;
 
-    uint8_t msg[256] = {0};
+    uint8_t msg[4096] = {0};
     for (size_t i = 0; i < initial_len; i++) msg[i] = initial_msg[i];
     msg[initial_len] = 0x80;
 
@@ -82,7 +82,7 @@ __global__ void brute_force_kernel(
 
     uint64_t nonce = start + idx;
 
-    char msg[128];
+    char msg[4096];
     for (int i = 0; i < base_len; i++) msg[i] = base[i];
     char nonce_str[20]; int nonce_len;
     uint_to_str(nonce, nonce_str, &nonce_len);
