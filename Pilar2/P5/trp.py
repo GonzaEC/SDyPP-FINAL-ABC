@@ -5,6 +5,8 @@ import redis
 import threading
 import math
 import logging
+import ssl
+import urllib.request
 
 # TRP (Pool de Transacciones) es un intermediario inteligente entre el NCT y los workers. 
 # El NCT dice "minà este bloque", y el TrP se encarga de dividir ese trabajo, distribuirlo, y decidir si hay que cambiar de modo GPU a CPU.
@@ -118,12 +120,7 @@ def monitor_loop():
                 "difficulty_nueva": FALLBACK_DIFFICULTY,
             }))
 
-            # TODO (integración GCP): iniciar instancias CPU en la nube.
-            # Ej: disparar un Cloud Run Job vía la API de Google Cloud
-            # (google-cloud-run client) para que arranque N ejecuciones
-            # de worker_cpu.py. Cada ejecución consume de [tareas] igual
-            # que un worker normal, no necesita más coordinación desde acá.
-            # start_cpu_instances(n=4)
+            scale_cpu_workers(CPU_WORKER_REPLICAS)
 
             in_fallback = True
 
@@ -140,12 +137,7 @@ def monitor_loop():
                 "difficulty_restaurada": original,
             }))
 
-            # TODO (integración GCP): destruir/dejar de lanzar instancias CPU.
-            # Con Cloud Run Jobs no haría falta "apagar" nada explícitamente
-            # (cada ejecución termina sola), simplemente se deja de disparar
-            # nuevas ejecuciones. Si se usa otro mecanismo (VMs, etc.) acá
-            # iría la destrucción explícita de esos recursos.
-            # stop_cpu_instances()
+            scale_cpu_workers(0)
 
             in_fallback = False
 
