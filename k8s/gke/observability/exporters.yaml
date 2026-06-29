@@ -167,7 +167,8 @@ spec:
             - containerPort: 9100
           resources:
             requests:
-              cpu: 10m
+              # Mínimo: corre en todos los nodos (DaemonSet). Ver nota en alloy.yaml.
+              cpu: 5m
               memory: 32Mi
             limits:
               cpu: 100m

@@ -133,7 +133,11 @@ spec:
               containerPort: 4318
           resources:
             requests:
-              cpu: 25m
+              # CPU request mínimo: este DaemonSet corre en TODOS los nodos
+              # (incluido el infra, que es chico y comparte con Redis/RabbitMQ).
+              # Un request alto dejaba a RabbitMQ sin CPU para schedular. El
+              # request es solo el piso de reserva; Alloy puede usar hasta el limit.
+              cpu: 5m
               memory: 128Mi
             limits:
               cpu: 300m
