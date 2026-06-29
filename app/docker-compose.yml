@@ -1,3 +1,12 @@
+# Stack local completo: app + Postgres + observabilidad (Prometheus, Grafana,
+# Loki, Tempo, Alloy). Un solo `docker compose up` levanta todo.
+#
+#   docker compose up
+#
+# Accesos: app http://localhost:3000 · Grafana http://localhost:3001 (admin/admin)
+#          Prometheus http://localhost:9090
+#
+# Los configs del stack de observabilidad viven en ../observability/local/.
 services:
   postgres:
     image: postgres:17-alpine
@@ -28,6 +37,8 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+      alloy:
+        condition: service_started
     environment:
       DATABASE_URL: postgres://entradas:entradas@postgres:5432/entradas
       SESSION_PASSWORD: ${SESSION_PASSWORD:-dev-only-change-me-please-this-must-be-at-least-32-characters-long}
@@ -38,8 +49,69 @@ services:
       MP_ACCESS_TOKEN: ${MP_ACCESS_TOKEN:-}
       MP_PUBLIC_URL: ${MP_PUBLIC_URL:-http://localhost:3000}
       NODE_ENV: production
+      # Trazas OTLP → Alloy (que las reenvía a Tempo).
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://alloy:4318
+      OTEL_SERVICE_NAME: frontend
     ports:
       - "3000:3000"
+
+  # --------------------------------------------------------------------------
+  # Observabilidad
+  # --------------------------------------------------------------------------
+  prometheus:
+    image: prom/prometheus:v2.54.1
+    restart: unless-stopped
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+    volumes:
+      - ../observability/local/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+    ports:
+      - "9090:9090"
+
+  loki:
+    image: grafana/loki:3.2.1
+    restart: unless-stopped
+    command: -config.file=/etc/loki/loki.yaml
+    volumes:
+      - ../observability/local/loki.yaml:/etc/loki/loki.yaml:ro
+
+  tempo:
+    image: grafana/tempo:2.6.1
+    restart: unless-stopped
+    command: -config.file=/etc/tempo/tempo.yaml
+    volumes:
+      - ../observability/local/tempo.yaml:/etc/tempo/tempo.yaml:ro
+
+  alloy:
+    image: grafana/alloy:v1.4.2
+    restart: unless-stopped
+    command:
+      - run
+      - /etc/alloy/config.alloy
+      - --server.http.listen-addr=0.0.0.0:12345
+    volumes:
+      - ../observability/local/config.alloy:/etc/alloy/config.alloy:ro
+      # Para descubrir y leer los logs de los contenedores.
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    depends_on:
+      - loki
+      - tempo
+
+  grafana:
+    image: grafana/grafana:11.2.2
+    restart: unless-stopped
+    environment:
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: admin
+      GF_USERS_ALLOW_SIGN_UP: "false"
+    volumes:
+      - ../observability/local/grafana-datasources.yaml:/etc/grafana/provisioning/datasources/datasources.yaml:ro
+    ports:
+      - "3001:3000"
+    depends_on:
+      - prometheus
+      - loki
+      - tempo
 
 volumes:
   postgres_data:

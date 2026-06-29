@@ -12,6 +12,12 @@ on:
     paths:
       - "k8s/gke/observability/**"
       - ".github/workflows/pipeline-5-observability.yml"
+  # Tras Pipeline 1 (crea/actualiza el node pool `monitoring`): así el stack se
+  # despliega recién cuando el pool ya existe, evitando pods Pending y el timeout
+  # del rollout. El `if` del job filtra a que Pipeline 1 haya terminado OK.
+  workflow_run:
+    workflows: ["Pipeline 1 - Infraestructura GKE"]
+    types: [completed]
 
 permissions:
   id-token: write
@@ -24,6 +30,9 @@ jobs:
   deploy-observability:
     name: Deploy stack LGTM
     needs: gitleaks
+    # En push/manual procede siempre; cuando lo dispara Pipeline 1, solo si ese
+    # terminó con éxito (no tiene sentido desplegar el stack si falló la infra).
+    if: ${{ github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success' }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4

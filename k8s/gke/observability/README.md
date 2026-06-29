@@ -43,8 +43,9 @@ En Grafana ya vienen provisionados los 3 datasources y el dashboard
 
 Desde `app/`:
 ```bash
-docker compose -f docker-compose.yml -f docker-compose.observability.yml up
+docker compose up
 ```
+Levanta app + Postgres + el stack de observabilidad en un solo compose.
 Grafana en http://localhost:3001. Configs en `observability/local/`.
 
 ## Instrumentación en el código

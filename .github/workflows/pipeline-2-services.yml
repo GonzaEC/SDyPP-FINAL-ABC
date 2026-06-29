@@ -2,6 +2,10 @@ name: "Pipeline 2 - Servicios Infraestructura"
 
 on:
   workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - "k8s/gke/infra/**"
   workflow_run:
     workflows: ["Pipeline 1 - Infraestructura GKE"]
     types: [completed]
@@ -17,7 +21,7 @@ jobs:
   deploy-infra:
     name: Deploy Redis + RabbitMQ
     needs: gitleaks
-    if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
+    if: ${{ github.event_name == 'workflow_dispatch' || github.event_name == 'push' || github.event.workflow_run.conclusion == 'success' }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
