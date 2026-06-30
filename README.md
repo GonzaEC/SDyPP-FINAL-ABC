@@ -102,11 +102,23 @@ Para el stack completo (app + blockchain):
 docker compose up
 ```
 
-## Documentación
+## Documentación por componente
 
-- **ADRs** (decisiones de arquitectura): [`app/docs/adr/`](app/docs/adr/)
-- **README de cada componente**: ver los READMEs dentro de cada directorio
-- **CLAUDE.md**: contexto técnico para desarrollo con IA
+Cada parte del sistema tiene su propio README. Índice:
+
+| Componente | Doc | Contenido |
+|------------|-----|-----------|
+| **App web** | [app/README.md](app/README.md) | Stack, modelo cripto, páginas, API, ciclo de vida de una entrada |
+| **Pilar 1 — GPU/CUDA** | [Pilar1/README.md](Pilar1/README.md) | Progresión de hitos, benchmark GPU vs CPU |
+| **Pilar 2 — Blockchain** | [Pilar2/README.md](Pilar2/README.md) | Evolución P1→P5, arquitectura final |
+| ↳ versión de producción | [Pilar2/P5/README.md](Pilar2/P5/README.md) | NCT/TrP/workers, colas, claves Redis, fallback, observabilidad |
+| **Infraestructura** | [infra/README.md](infra/README.md) | Terraform/OpenTofu, GKE, node pools |
+| **Kubernetes** | [k8s/README.md](k8s/README.md) | Manifiestos GKE + cluster del profesor |
+| **Observabilidad** | [k8s/gke/observability/README.md](k8s/gke/observability/README.md) · [MANUAL.md](k8s/gke/observability/MANUAL.md) | Stack LGTM: métricas, logs, trazas, alertas |
+| **CI/CD** | [.github/workflows/README.md](.github/workflows/README.md) | Los 5 pipelines |
+| **ADRs** | [app/docs/adr/](app/docs/adr/) | Decisiones de arquitectura de la app |
+
+`CLAUDE.md` (raíz y `app/`) tiene el contexto técnico para desarrollo asistido por IA.
 
 ## Estructura del repositorio
 
@@ -119,7 +131,9 @@ SDyPP-FINAL-ABC/
 ├── k8s/                    # Manifiestos Kubernetes
 │   ├── gke/               # Cluster propio
 │   │   ├── infra/         # Redis, RabbitMQ
-│   │   └── apps/          # Frontend, NCT, TrP, workers, Postgres
+│   │   ├── apps/          # Frontend, NCT, TrP, workers, Postgres
+│   │   └── observability/ # Prometheus, Grafana, Loki, Tempo, Alloy, alertas
 │   └── profesor/          # Cluster del profesor (GPU workers)
-└── .github/workflows/     # Pipelines CI/CD
+├── observability/local/    # Configs del stack para docker-compose local
+└── .github/workflows/     # Pipelines CI/CD (5)
 ```
