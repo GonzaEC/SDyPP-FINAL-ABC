@@ -1,4 +1,4 @@
-import { MercadoPagoConfig, Preference, Payment } from "mercadopago";
+import { MercadoPagoConfig, Preference, Payment, PaymentRefund } from "mercadopago";
 
 function getClient() {
   const token = process.env.MP_ACCESS_TOKEN;
@@ -73,6 +73,19 @@ export async function createPreference(input: CreatePreferenceInput) {
     sandboxInitPoint: result.sandbox_init_point!,
     checkoutUrl,
   };
+}
+
+// Reembolso TOTAL de un pago en MercadoPago. Se usa como red de seguridad
+// cuando el pago se aprobó pero la entrega on-chain de la entrada falló de forma
+// terminal (p.ej. la entrada ya no le pertenece al organizador porque otra
+// compra del mismo ticket ganó la carrera). Idempotente del lado de MP: pedir
+// el refund de un pago ya reembolsado devuelve error, por eso el caller lo
+// envuelve en try/catch.
+export async function refundPayment(mpPaymentId: string): Promise<void> {
+  const client = getClient();
+  const refund = new PaymentRefund(client);
+  // Sin body.amount ⇒ reembolso total.
+  await refund.create({ payment_id: Number(mpPaymentId) });
 }
 
 export async function getPaymentInfo(mpPaymentId: string) {

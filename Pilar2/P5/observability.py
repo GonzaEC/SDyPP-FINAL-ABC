@@ -130,7 +130,32 @@ def setup_logging(service: str, level: str = None) -> logging.Logger:
     root.handlers.clear()
     root.addHandler(handler)
     root.setLevel(getattr(logging, level_name, logging.INFO))
+
+    _quiet_noisy_loggers()
     return logging.getLogger(service)
+
+
+# Librerías que ensucian los logs de la app con ruido de bajo valor:
+# - pika: loguea a INFO cada socket, handshake TLS, "Created channel", etc. en
+#   cada (re)conexión. Nuestros propios servicios ya loguean lo importante
+#   ("Conexión a RabbitMQ perdida, reconectando...").
+# - uvicorn.access: una línea INFO por request (ruido en el gpu-server, que
+#   recibe un /mine por chunk). Los errores siguen porque uvicorn.error queda.
+# - opentelemetry.exporter.otlp: spamea reintentos/errores cuando no alcanza el
+#   collector (p.ej. en el cluster del profe, donde no está Alloy). Es la fuente
+#   principal de "no se entiende nada" en esos pods. Lo silenciamos del todo.
+_NOISY_WARNING_LOGGERS = ("pika", "uvicorn.access", "aiormq", "aio_pika")
+_NOISY_SILENCED_LOGGERS = ("opentelemetry.exporter.otlp",)
+
+
+def _quiet_noisy_loggers() -> None:
+    """Sube el nivel de las librerías ruidosas. Overridable con LOG_LEVEL_LIBS
+    (default WARNING); poné DEBUG si necesitás ver el detalle de pika/uvicorn."""
+    libs_level = getattr(logging, os.getenv("LOG_LEVEL_LIBS", "WARNING").upper(), logging.WARNING)
+    for name in _NOISY_WARNING_LOGGERS:
+        logging.getLogger(name).setLevel(libs_level)
+    for name in _NOISY_SILENCED_LOGGERS:
+        logging.getLogger(name).setLevel(logging.CRITICAL)
 
 
 # ---------------------------------------------------------------------------

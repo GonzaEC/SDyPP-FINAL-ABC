@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { prisma } from "@/lib/db";
+import { fmtDate, fmtTime } from "@/lib/datetime";
 import { TeseraMockup } from "@/components/tesera-mockup";
 import { getSession } from "@/lib/session";
 import { getDisplayName, getInitials } from "@/lib/display-name";
@@ -75,12 +76,12 @@ export default async function EventDetail({ params }: { params: Promise<{ id: st
           <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 sm:gap-4">
             <Stat
               label="Fecha"
-              value={date.toLocaleDateString("es-AR", { day: "2-digit", month: "short" })}
-              hint={String(date.getFullYear())}
+              value={fmtDate(date, { day: "2-digit", month: "short" })}
+              hint={fmtDate(date, { year: "numeric" })}
             />
             <Stat
               label="Hora"
-              value={date.toLocaleTimeString("es-AR", { hour: "2-digit", minute: "2-digit" })}
+              value={fmtTime(date, { hour: "2-digit", minute: "2-digit" })}
               hint="hs"
               mono
             />
@@ -153,7 +154,7 @@ export default async function EventDetail({ params }: { params: Promise<{ id: st
             <TeseraMockup
               name={event.name}
               venue={event.venue}
-              date={`${date.toLocaleDateString("es-AR", { day: "2-digit", month: "short" }).toUpperCase().replace(".", "")} · ${date.toLocaleTimeString("es-AR", { hour: "2-digit", minute: "2-digit" })}`}
+              date={`${fmtDate(date, { day: "2-digit", month: "short" }).toUpperCase().replace(".", "")} · ${fmtTime(date, { hour: "2-digit", minute: "2-digit" })}`}
               holder="Tu nombre"
             />
           </div>

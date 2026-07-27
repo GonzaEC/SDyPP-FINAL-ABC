@@ -2,6 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { ArrowLeft, Calendar, MapPin } from "lucide-react";
 import { prisma } from "@/lib/db";
+import { fmtDate } from "@/lib/datetime";
 import { getCategory } from "@/lib/categories";
 import { getDisplayName, getInitials } from "@/lib/display-name";
 
@@ -36,7 +37,7 @@ export default async function OrganizerPublicPage({
   const initials = getInitials(displayName);
   const upcoming = events.filter((e) => new Date(e.datetime).getTime() > Date.now());
   const past = events.filter((e) => new Date(e.datetime).getTime() <= Date.now());
-  const memberSince = organizer.createdAt.toLocaleDateString("es-AR", {
+  const memberSince = fmtDate(organizer.createdAt, {
     month: "long",
     year: "numeric",
   });
@@ -159,7 +160,7 @@ function EventGrid({ events, dim }: { events: EventCard[]; dim?: boolean }) {
                 </h3>
                 <div className="flex items-center gap-1.5 text-[12.5px] text-[var(--muted)]">
                   <Calendar size={12} strokeWidth={2} />
-                  {d.toLocaleDateString("es-AR", {
+                  {fmtDate(d, {
                     day: "2-digit",
                     month: "short",
                     year: "numeric",

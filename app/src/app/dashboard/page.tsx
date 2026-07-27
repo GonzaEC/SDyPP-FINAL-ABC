@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { prisma } from "@/lib/db";
+import { fmtDate, fmtTime } from "@/lib/datetime";
 import { getSession } from "@/lib/session";
 import { settleDueOperations } from "@/lib/nct/client";
 import { EmitButton } from "./emit-button";
@@ -115,10 +116,10 @@ export default async function DashboardPage() {
                       style={{ background: "var(--brand-soft)", color: "var(--brand)" }}
                     >
                       <span className="text-[9px] sm:text-[11px] font-semibold uppercase tracking-wider opacity-80 leading-none">
-                        {date.toLocaleDateString("es-AR", { month: "short" }).replace(".", "")}
+                        {fmtDate(date, { month: "short" }).replace(".", "")}
                       </span>
                       <span className="text-[18px] sm:text-[22px] font-semibold leading-none mt-1">
-                        {date.toLocaleDateString("es-AR", { day: "2-digit" })}
+                        {fmtDate(date, { day: "2-digit" })}
                       </span>
                     </div>
 
@@ -162,7 +163,7 @@ export default async function DashboardPage() {
                         </span>
                       </div>
                       <p className="text-[12px] sm:text-[13px] text-[var(--muted)] truncate">
-                        {e.venue} · {date.toLocaleTimeString("es-AR", { hour: "2-digit", minute: "2-digit" })} hs
+                        {e.venue} · {fmtTime(date, { hour: "2-digit", minute: "2-digit" })} hs
                       </p>
                       <p className="text-[12px] sm:text-[13px] text-[var(--muted)] mt-0.5">
                         <span className="text-[var(--ink)] font-medium mono">${e.price.toFixed(2)}</span>

@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { prisma } from "@/lib/db";
+import { fmtDate, fmtTime } from "@/lib/datetime";
 import { isValidCategory, getCategory } from "@/lib/categories";
 import { EventsFilters } from "./events-filters";
 
@@ -98,10 +99,10 @@ export default async function EventsPage({
                         className="flex flex-col items-center justify-center w-14 h-14 rounded-xl bg-white/95 backdrop-blur"
                       >
                         <span className="text-[10px] font-semibold uppercase tracking-wider text-[var(--muted)]">
-                          {d.toLocaleDateString("es-AR", { month: "short" }).replace(".", "")}
+                          {fmtDate(d, { month: "short" }).replace(".", "")}
                         </span>
                         <span className="text-[19px] font-semibold text-[var(--ink)] leading-none">
-                          {d.toLocaleDateString("es-AR", { day: "2-digit" })}
+                          {fmtDate(d, { day: "2-digit" })}
                         </span>
                       </div>
                       <div className="flex flex-col items-end gap-1.5">
@@ -128,7 +129,7 @@ export default async function EventsPage({
                     <div className="flex items-center justify-between mt-5 pt-4 border-t border-[var(--line)]">
                       <span className="text-[16px] font-semibold">${e.price.toFixed(2)}</span>
                       <span className="text-[12px] text-[var(--muted)] mono">
-                        {d.toLocaleTimeString("es-AR", { hour: "2-digit", minute: "2-digit" })} hs
+                        {fmtTime(d, { hour: "2-digit", minute: "2-digit" })} hs
                       </span>
                     </div>
                   </div>

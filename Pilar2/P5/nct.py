@@ -566,6 +566,26 @@ def apply_confirmed_tx(tx: dict, block_index: int, confirmed_at: float):
             ticket_id = f"{event_id}:{i}"
             set_ticket_owner(ticket_id, organizer, event_id)
     elif tx_type == "transfer":
+        # Defensa en profundidad contra doble-gasto del mismo ticket. El
+        # ownership se chequeó al recibir la tx (POST /tx/transfer), pero si dos
+        # transferencias del MISMO ticket entraron antes de minarse, ambas
+        # pasaron ese chequeo (el dueño seguía siendo el organizador). Acá, al
+        # APLICAR el bloque, re-verificamos: si el ticket ya cambió de dueño
+        # (otra transferencia ganó), rechazamos esta en vez de pisar al dueño
+        # legítimo (evita el last-write-wins). La app ve la op FAILED y dispara
+        # el reembolso del pago perdedor.
+        current_owner = r.get(f"ticket_owner:{tx['ticket_id']}")
+        if current_owner != tx["from_pubkey"]:
+            mark_operation_failed(op_id, "not_current_owner_at_apply")
+            r.rpush("logs", json.dumps({
+                "timestamp": time.time(),
+                "event": "transfer_rechazada_al_aplicar",
+                "op_id": op_id,
+                "ticket_id": tx["ticket_id"],
+                "from_pubkey": tx["from_pubkey"],
+                "current_owner": current_owner,
+            }))
+            return
         set_ticket_owner(tx["ticket_id"], tx["to_pubkey"], tx["event_id"])
     save_operation(op_id, {
         "status": "CONFIRMED",

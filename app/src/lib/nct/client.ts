@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { prisma } from "@/lib/db";
 import { metrics } from "@/lib/observability/metrics";
+import { refundPayment, isMpConfigured } from "@/lib/payments/mercadopago";
 
 // ============================================================================
 // Tipos públicos
@@ -429,6 +430,34 @@ async function markFailed(opId: string, code: string) {
       where: { id: op.eventId, status: "MINTING" },
       data: { status: "DRAFT", ncTBatchRef: null },
     });
+  }
+  // Refund automático (red de seguridad): si una transferencia de COMPRA/REVENTA
+  // falla al confirmarse (p.ej. el NCT la rechazó al aplicar el bloque porque
+  // otra compra del mismo ticket ganó), reembolsamos el pago asociado. Las
+  // validaciones (reason=validation) no son pagos, no aplican.
+  if (op?.type === "transfer" && op.reason !== "validation") {
+    await refundFailedTransferPayment(opId);
+  }
+}
+
+// Reembolsa el pago vinculado a una operación de transferencia que falló.
+// Idempotente: solo actúa sobre pagos APPROVED (tras reembolsar pasan a
+// REFUNDED, así un segundo intento no hace nada).
+async function refundFailedTransferPayment(opId: string): Promise<void> {
+  if (!isMpConfigured()) return; // en modo mock no hay pago real que reembolsar
+  const payment = await prisma.payment.findFirst({
+    where: { nctOpRef: opId, status: "APPROVED" },
+  });
+  if (!payment?.mpPaymentId) return;
+  try {
+    await refundPayment(payment.mpPaymentId);
+    await prisma.payment.update({
+      where: { id: payment.id },
+      data: { status: "REFUNDED", nctStatus: "FAILED" },
+    });
+    console.log(`[refund] Payment ${payment.id} reembolsado (op ${opId} FAILED)`);
+  } catch (err) {
+    console.error(`[refund] Falló el reembolso de payment ${payment.id}:`, err);
   }
 }
 

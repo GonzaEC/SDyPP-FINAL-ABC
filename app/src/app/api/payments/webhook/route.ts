@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
-import { getPaymentInfo } from "@/lib/payments/mercadopago";
+import { getPaymentInfo, refundPayment } from "@/lib/payments/mercadopago";
 import { submitTransfer } from "@/lib/nct/client";
 import { metrics } from "@/lib/observability/metrics";
 
@@ -136,7 +136,7 @@ async function handleApproved(
     event: { organizer: { publicKey: string } };
     user: { publicKey: string };
   },
-  _info: { id: string },
+  info: { id: string },
   listing: { id: string; status: string; seller: { id: string; publicKey: string } } | null,
 ) {
   if (!payment.ticketId) {
@@ -230,10 +230,32 @@ async function handleApproved(
     console.error(`[webhook] Error disparando transfer para payment ${payment.id}:`, err);
     const failureType = classifyTransferError(err);
 
-    await prisma.payment.update({
-      where: { id: payment.id },
-      data: { nctStatus: failureType === "terminal" ? "FAILED" : "PENDING" },
-    });
+    if (failureType === "terminal") {
+      // El pago se aprobó pero la entrega on-chain falló de forma terminal
+      // (la entrada ya no le pertenece al origen — otra compra del mismo ticket
+      // ganó la carrera). Reembolsamos automáticamente: plata adentro = entrada
+      // entregada, o plata de vuelta. info.id es el mpPaymentId real.
+      try {
+        await refundPayment(info.id);
+        await prisma.payment.update({
+          where: { id: payment.id },
+          data: { status: "REFUNDED", nctStatus: "FAILED" },
+        });
+        console.log(`[webhook] Payment ${payment.id} reembolsado (transfer terminal)`);
+      } catch (refundErr) {
+        // El refund se puede reintentar; dejamos el pago marcado para revisión.
+        console.error(`[webhook] Falló el reembolso de ${payment.id}:`, refundErr);
+        await prisma.payment.update({
+          where: { id: payment.id },
+          data: { nctStatus: "FAILED" },
+        });
+      }
+    } else {
+      await prisma.payment.update({
+        where: { id: payment.id },
+        data: { nctStatus: "PENDING" },
+      });
+    }
 
     return NextResponse.json(
       { error: failureType === "terminal" ? "nct_transfer_failed_terminal" : "nct_transfer_retryable" },

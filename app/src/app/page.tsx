@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { Fingerprint, RefreshCw, CreditCard, Scale } from "lucide-react";
 import { prisma } from "@/lib/db";
+import { fmtDate, fmtTime } from "@/lib/datetime";
 import { TeseraMockup } from "@/components/tesera-mockup";
 
 export const dynamic = "force-dynamic";
@@ -245,10 +246,10 @@ export default async function Home() {
                 >
                   <div className="flex items-center justify-between mb-4">
                     <span className="badge is-brand">
-                      {d.toLocaleDateString("es-AR", { day: "2-digit", month: "short" })}
+                      {fmtDate(d, { day: "2-digit", month: "short" })}
                     </span>
                     <span className="mono text-[12px] text-[var(--muted)]">
-                      {d.toLocaleTimeString("es-AR", { hour: "2-digit", minute: "2-digit" })}
+                      {fmtTime(d, { hour: "2-digit", minute: "2-digit" })}
                     </span>
                   </div>
                   <h3 className="text-[20px] font-semibold leading-tight mb-1.5">{e.name}</h3>

@@ -45,8 +45,29 @@ export async function POST(_req: Request, { params }: { params: Promise<{ id: st
     );
   }
 
-  const reservation = await prisma.$transaction(async (tx) => {
-    const activeReservations = await tx.payment.findMany({
+  // TTL de reservas: una reserva PENDING que nunca se completó (el comprador
+  // abandonó MercadoPago) mantendría el ticket bloqueado para siempre. Antes de
+  // reservar liberamos las PENDING vencidas marcándolas CANCELLED, así el ticket
+  // vuelve al pool y el índice único deja de bloquearlo. Las APPROVED no vencen
+  // (ya están pagas).
+  const RESERVATION_TTL_MIN = 15;
+  await prisma.payment.updateMany({
+    where: {
+      status: "PENDING",
+      ticketId: { not: null },
+      createdAt: { lt: new Date(Date.now() - RESERVATION_TTL_MIN * 60_000) },
+    },
+    data: { status: "CANCELLED" },
+  });
+
+  // Reserva atómica. El índice único parcial `payment_one_active_reservation_per_ticket`
+  // garantiza ≤1 reserva activa (PENDING/APPROVED) por ticket: si dos compras
+  // concurrentes intentan tomar el MISMO último ticket, la segunda viola el
+  // constraint (P2002) y la traducimos a "agotado" — así el segundo comprador
+  // NO llega a pagar. Sin esto, ambas reservaban el mismo ticket (race TOCTOU).
+  const reserveTicket = () =>
+    prisma.$transaction(async (tx) => {
+      const activeReservations = await tx.payment.findMany({
         where: {
           eventId,
           listingId: null,
@@ -56,33 +77,45 @@ export async function POST(_req: Request, { params }: { params: Promise<{ id: st
         select: { ticketId: true },
       });
 
-    const reservedTicketIds = activeReservations
-      .map((row) => row.ticketId)
-      .filter((ticketId): ticketId is string => Boolean(ticketId));
+      const reservedTicketIds = activeReservations
+        .map((row) => row.ticketId)
+        .filter((ticketId): ticketId is string => Boolean(ticketId));
 
-    const ticket = await tx.ticket.findFirst({
-      where: {
-        eventId,
-        ownerPublicKey: event.organizer.publicKey,
-        validatedAt: null,
-        ...(reservedTicketIds.length > 0 ? { id: { notIn: reservedTicketIds } } : {}),
-      },
-      orderBy: { ticketNumber: "asc" },
+      const ticket = await tx.ticket.findFirst({
+        where: {
+          eventId,
+          ownerPublicKey: event.organizer.publicKey,
+          validatedAt: null,
+          ...(reservedTicketIds.length > 0 ? { id: { notIn: reservedTicketIds } } : {}),
+        },
+        orderBy: { ticketNumber: "asc" },
+      });
+      if (!ticket) return null;
+
+      const payment = await tx.payment.create({
+        data: {
+          userId: buyerUserId,
+          eventId,
+          ticketId: ticket.id,
+          amount: event.price,
+          status: "PENDING",
+        },
+      });
+
+      return { payment, ticket };
     });
-    if (!ticket) return null;
 
-    const payment = await tx.payment.create({
-      data: {
-        userId: buyerUserId,
-        eventId,
-        ticketId: ticket.id,
-        amount: event.price,
-        status: "PENDING",
-      },
-    });
-
-    return { payment, ticket };
-  });
+  let reservation: Awaited<ReturnType<typeof reserveTicket>> = null;
+  try {
+    reservation = await reserveTicket();
+  } catch (err) {
+    // P2002 = otra compra concurrente ya reservó este ticket (índice único parcial).
+    if (err && typeof err === "object" && "code" in err && (err as { code?: string }).code === "P2002") {
+      reservation = null;
+    } else {
+      throw err;
+    }
+  }
 
   if (!reservation) {
     return NextResponse.json({ error: "sold_out", message: "Agotado, no quedan entradas." }, { status: 409 });

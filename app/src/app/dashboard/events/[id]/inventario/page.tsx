@@ -2,6 +2,7 @@ import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import { ArrowLeft, Ticket, ShoppingCart, CheckCircle2, Tag, Wallet } from "lucide-react";
 import { prisma } from "@/lib/db";
+import { fmtDate, fmtTime } from "@/lib/datetime";
 import { getSession } from "@/lib/session";
 import { settleDueOperations } from "@/lib/nct/client";
 import { InventoryBar } from "./inventory-bar";
@@ -82,9 +83,9 @@ export default async function InventoryPage({
           {event.name}
         </h1>
         <p className="text-[13px] sm:text-[14px] text-[var(--muted)]">
-          {event.venue} · {date.toLocaleDateString("es-AR", { day: "2-digit", month: "long", year: "numeric" })}
+          {event.venue} · {fmtDate(date, { day: "2-digit", month: "long", year: "numeric" })}
           {" · "}
-          <span className="mono">{date.toLocaleTimeString("es-AR", { hour: "2-digit", minute: "2-digit" })} hs</span>
+          <span className="mono">{fmtTime(date, { hour: "2-digit", minute: "2-digit" })} hs</span>
         </p>
       </header>
 
