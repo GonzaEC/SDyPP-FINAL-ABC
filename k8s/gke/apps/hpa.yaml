@@ -1,0 +1,90 @@
+# HorizontalPodAutoscaler para las cargas que escalan por demanda de tráfico.
+#
+# Funcionan en conjunto con el Cluster Autoscaler de infra/gke.tf: el HPA suma
+# pods, y si el pool `apps` se queda sin lugar, el autoscaler suma nodos (hasta
+# 5). Sin las dos piezas el escalado se corta en el primer cuello.
+#
+# Los dos deployments tienen `requests.cpu` declarado, que es requisito del HPA:
+# la utilización se calcula contra el request, no contra el límite.
+#
+# ---------------------------------------------------------------------------
+# Por qué NO hay un HPA para blockchain-worker-cpu
+# ---------------------------------------------------------------------------
+# Es la decisión no obvia de este archivo. El worker-cpu arranca en `replicas: 0`
+# y su cantidad de réplicas la maneja el TrP: cuando deja de llegar el heartbeat
+# de la GPU, `scale_cpu_workers()` escala el deployment vía la API de Kubernetes
+# (ver Pilar2/P5/trp.py y el RBAC en trp-rbac.yaml).
+#
+# Poner un HPA encima significaría tener dos controladores escribiendo el mismo
+# campo `spec.replicas` con criterios distintos y opuestos:
+#
+#   - El TrP escala UP por ausencia de GPU, que es una señal de disponibilidad.
+#   - El HPA escalaría DOWN por CPU baja, que es lo que ve justo al arrancar los
+#     pods nuevos, antes de que tomen tareas de la cola.
+#
+# El resultado sería flapping: el TrP levanta workers, el HPA los baja, el
+# fallback nunca termina de activarse. Mientras el TrP sea el dueño del ciclo de
+# vida del worker-cpu, el HPA queda fuera a propósito.
+#
+# Si en algún momento se quisiera escalar los workers por carga real, la métrica
+# correcta no es la CPU sino la profundidad de la cola `tareas` de RabbitMQ, vía
+# un HPA con métricas externas (`rabbitmq_queue_messages_ready`, que ya expone
+# el plugin de Prometheus). Eso reemplazaría al mecanismo del TrP en lugar de
+# competir con él.
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: frontend
+  namespace: sdypp
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: frontend
+  minReplicas: 2 # nunca por debajo de las 2 réplicas que pide la consigna
+  maxReplicas: 6
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 70
+  behavior:
+    scaleDown:
+      # Ventana amplia para bajar: el tráfico de venta de entradas es a ráfagas
+      # (se abre la venta de un evento y llega todo junto). Bajar rápido después
+      # de un pico deja al sistema sin capacidad para la ráfaga siguiente.
+      stabilizationWindowSeconds: 300
+    scaleUp:
+      stabilizationWindowSeconds: 30
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: blockchain-nct
+  namespace: sdypp
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: blockchain-nct
+  # El máximo es bajo a propósito: sumar réplicas del NCT escala la atención de
+  # requests HTTP, pero NO el minado. El lock distribuido de Redis serializa la
+  # creación de bloques, así que solo un pod minera a la vez sin importar
+  # cuántos haya. Más allá de 4 se agrega contención sobre Redis sin ganancia.
+  minReplicas: 2
+  maxReplicas: 4
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 70
+  behavior:
+    scaleDown:
+      stabilizationWindowSeconds: 300
+    scaleUp:
+      stabilizationWindowSeconds: 30

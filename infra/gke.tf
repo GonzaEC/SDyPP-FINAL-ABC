@@ -26,7 +26,16 @@ resource "google_container_node_pool" "infra" {
   location = var.zone
   cluster  = google_container_cluster.primary.name
 
-  node_count = 1
+  # Cluster Autoscaler. Redis y RabbitMQ son singletons con PVC, así que este
+  # pool no crece por demanda de réplicas; el rango 1-2 existe para que el
+  # cluster pueda reemplazar el nodo sin downtime (por ejemplo durante un
+  # upgrade) en vez de quedarse sin capacidad.
+  initial_node_count = 1
+
+  autoscaling {
+    min_node_count = 1
+    max_node_count = 2
+  }
 
   node_config {
     machine_type = "e2-medium"
@@ -53,7 +62,20 @@ resource "google_container_node_pool" "apps" {
   location = var.zone
   cluster  = google_container_cluster.primary.name
 
-  node_count = 2
+  # Cluster Autoscaler. Este es el pool que realmente necesita elasticidad:
+  # aloja el frontend y el NCT (ambos con HPA, ver k8s/gke/apps/hpa.yaml) y los
+  # worker-cpu, que el TrP escala de golpe cuando cae la GPU. Sin autoscaler,
+  # un fallback con varios workers simplemente no tendría dónde programarlos y
+  # los pods quedarían Pending.
+  #
+  # El máximo de 5 es un techo de costo deliberado, no una estimación de carga:
+  # son nodos spot, pero igual conviene acotar cuánto puede crecer solo.
+  initial_node_count = 2
+
+  autoscaling {
+    min_node_count = 2
+    max_node_count = 5
+  }
 
   node_config {
     machine_type = "e2-medium"
