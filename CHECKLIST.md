@@ -26,15 +26,15 @@ blockchain de la cátedra).
 | 1. Funciones de blockchain | 14 | 1 | 1 | Sólido: métricas listas; falta el modo competitivo |
 | 2. Plataforma escalable en K8s | 7 | 1 | 1 | Casi completo |
 | 3. Ambiente productivo real | 6 | 2 | 4 | El más flojo: falta todo el eje de autoescalado |
-| 4. Pruebas del sistema | 0 | 1 | 6 | **El hueco más grande del proyecto** |
+| 4. Pruebas del sistema | 4 | 3 | 0 | Cubierta: 36 unit tests + matriz de carga corrida |
 | 5. Pipelines | 5 | 0 | 0 | Completo (1 ítem N/A) — filtro de Pipeline 4 arreglado |
 | 6. Repositorio y entrega | 5 | 0 | 1 | Falta solo el video |
-| 7. Informe | 1 | 2 | 3 | No arrancado |
-| **Total** | **38** | **7** | **16** | |
+| 7. Informe | 3 | 1 | 2 | Los datos están; falta ensamblar el documento |
+| **Total** | **44** | **8** | **9** | |
 
-Lo que mejor está: **blockchain, pipelines y repositorio**. Lo que peor: **pruebas e
-informe**, que además son las dos secciones que el checklist pide demostrar con evidencia
-medida, no con código.
+Lo que mejor está: **blockchain, pruebas y pipelines**. Lo único sin empezar es el
+**autoescalado** (§3) y el armado final del **informe** (§7) — para el que ya existe toda
+la evidencia medida en `Pilar2/P5/resultados/`.
 
 ---
 
@@ -120,9 +120,12 @@ La sección más débil. El eje de **autoescalado no existe**: los node pools ti
 
 ## 4. Pruebas del sistema
 
-**El hueco más grande del proyecto.** Hay 3 specs de Playwright end-to-end
-(`auth`, `organizer`, `listing`) y dos scripts de smoke, pero **cero tests unitarios** y
-ninguna prueba de carga.
+Cubierta desde el 2026-08-04. **36 unit tests** (14 TypeScript con vitest + 22 Python con
+pytest), los 3 specs de Playwright end-to-end, dos scripts de smoke, y un arnés de carga
+(`Pilar2/P5/loadtest.py`) cuya matriz de resultados está en `Pilar2/P5/resultados/`.
+
+Los tests de Python corren sin infraestructura: `tests/conftest.py` inyecta fakes de
+`redis` y `pika` en `sys.modules` antes de importar `nct.py`.
 
 | Ítem | Estado | Qué falta |
 |---|---|---|
@@ -174,11 +177,11 @@ ya se agregaron al filtro.
 
 | Ítem | Estado | Qué falta |
 |---|---|---|
-| Comparativa y análisis de resultados | 🟡 | Existe el benchmark GPU vs CPU de Pilar 1 (hasta 128× con prefijo de 6). Falta el análisis del sistema distribuido completo |
+| Comparativa y análisis de resultados | 🟡 | Existen el benchmark GPU vs CPU de Pilar 1 (hasta 128×) y el análisis distribuido en `resultados/RESUMEN.md`. Falta unificarlos en el informe |
 | Diagrama de arquitectura | ✅ | En el README raíz y en `Pilar2/README.md` |
-| Cómo funciona el pool y cómo escala | 🟡 | El flujo está documentado; falta el análisis de escalado con distintas cargas |
-| Casos de prueba N transacciones / M recursos | ❌ | Depende de §4 |
-| Gráficos comparativos de tiempos de respuesta | ❌ | Depende de §4 |
+| Cómo funciona el pool y cómo escala | ✅ | `resultados/RESUMEN.md` lo analiza con datos medidos: fragmentar el chunk domina sobre agregar workers |
+| Casos de prueba N transacciones / M recursos | ✅ | Matriz corrida con M=1 y M=2, CSVs por transacción en `resultados/` |
+| Gráficos comparativos de tiempos de respuesta | ❌ | Hay tablas, no gráficos. Los CSVs ya tienen los datos crudos para generarlos |
 | Reflexión crítica (limitaciones, mejoras, contexto real) | ❌ | No escrita |
 
 ---

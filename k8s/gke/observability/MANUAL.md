@@ -96,7 +96,8 @@ Para ver qué está scrapeando: Prometheus UI → **Status → Targets**.
 | Métrica | Tipo | Qué mide |
 |---------|------|----------|
 | `nct_blocks_total` | counter | bloques minados y confirmados |
-| `nct_block_mining_seconds` | histogram | tiempo publicar tarea → solución válida |
+| `nct_block_mining_seconds{difficulty}` | histogram | tiempo publicar tarea → solución válida, desagregado por prefijo de dificultad (`00`, `0000`, …) |
+| `nct_block_validation_seconds{difficulty}` | histogram | tiempo de verificar el PoW de la solución ganadora (recálculo MD5 + chequeo del prefijo) |
 | `nct_transactions_received_total{tx_type}` | counter | tx recibidas (`mint`/`transfer`/`legacy`) |
 | `nct_solutions_rejected_total{reason}` | counter | soluciones descartadas (`invalid_pow`, `stale_task`, ...) |
 | `nct_mining_timeouts_total` | counter | timeouts esperando solución |
@@ -109,7 +110,31 @@ Para ver qué está scrapeando: Prometheus UI → **Status → Targets**.
 `trp_fallback_active` (0/1), `trp_gpu_alive` (0/1), `trp_cpu_scale_events_total{action}`.
 
 **Workers** (`worker_*`, label `worker_type=cpu|gpu`): `worker_tasks_processed_total`,
-`worker_solutions_found_total`, `worker_task_duration_seconds`.
+`worker_solutions_found_total`, `worker_task_duration_seconds`, `worker_hashes_total`,
+`worker_task_queue_latency_seconds`.
+
+Sobre las dos últimas:
+
+- `worker_hashes_total` cuenta hashes probados. Hashes por segundo:
+  `rate(worker_hashes_total[1m])`. Sin agregar, da una serie por `instance`, o sea
+  **por nodo**; con `sum by (worker_type)`, la comparativa CPU vs GPU.
+
+  Ojo al interpretar esa comparativa: los dos tipos cuentan cosas ligeramente distintas,
+  y es correcto que así sea. El worker CPU acumula las iteraciones **realmente
+  ejecutadas** y corta al encontrar el nonce. El worker GPU suma el **rango completo**
+  delegado, porque el kernel CUDA lanza todos los threads sobre el rango entero: esos
+  hashes se calculan aunque la solución aparezca al principio. Contar el rango completo
+  en GPU no infla el número, refleja el trabajo que la placa hizo de verdad.
+
+- `worker_task_queue_latency_seconds` mide TrP→worker restando timestamps de procesos
+  distintos: **depende de que los relojes estén sincronizados**. Si aparecen valores
+  sospechosamente bajos o el histograma se amontona en el primer bucket, revisar el NTP
+  de los nodos antes de creerle a la métrica.
+
+  Segunda causa posible de valores casi nulos: cuando el mensaje no trae `_published_at`
+  (por ejemplo, tareas encoladas antes de desplegar esta versión), el worker usa la hora
+  actual como fallback y la observación queda en ~0. Un pico de ceros justo después de
+  un deploy es eso, no latencia real.
 
 **gpu-server** (`gpu_*`): `gpu_mine_requests_total`, `gpu_solutions_found_total`,
 `gpu_mine_duration_seconds`.
