@@ -36,6 +36,9 @@ Las ADRs son cortas, inmutables (no se editan, se reemplazan), y se numeran en o
 | [022](022-panel-blockchain-monitoring.md) | Panel de monitoreo blockchain integrado en la app | Accepted |
 | [023](023-iac-terraform-gcp.md) | Infraestructura como código con Terraform/OpenTofu en GCP | Accepted |
 | [024](024-ci-cd-cuatro-pipelines.md) | CI/CD con cuatro pipelines especializados | Accepted |
+| [025](025-reserva-atomica-y-refund.md) | Reserva atómica de entradas e invariante de reembolso | Accepted |
+| [026](026-autoescalado-y-dueno-del-worker-cpu.md) | Autoescalado por HPA, con el worker-cpu fuera | Accepted |
+| [027](027-pool-cooperativo-no-competitivo.md) | Pool de minado cooperativo, no competitivo | Accepted |
 
 ## Cómo escribir una nueva
 
