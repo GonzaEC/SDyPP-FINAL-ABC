@@ -24,16 +24,15 @@ blockchain de la cátedra).
 |---|---|---|---|---|
 | 1. Funciones de blockchain | 14 | 1 | 1 | Sólido: métricas listas; falta el modo competitivo |
 | 2. Plataforma escalable en K8s | 7 | 1 | 1 | Casi completo |
-| 3. Ambiente productivo real | 9 | 2 | 1 | Solo falta migrar los stateful a StatefulSet |
+| 3. Ambiente productivo real | 10 | 2 | 0 | Completo: StatefulSets migrados |
 | 4. Pruebas del sistema | 4 | 3 | 0 | Cubierta: 36 unit tests + matriz de carga corrida |
 | 5. Pipelines | 5 | 0 | 0 | Completo (1 ítem N/A) — filtro de Pipeline 4 arreglado |
 | 6. Repositorio y entrega | 5 | 0 | 1 | Falta solo el video |
 | 7. Informe | 6 | 0 | 0 | Completa — `docs/INFORME.md` |
-| **Total** | **50** | **7** | **4** | |
+| **Total** | **51** | **7** | **3** | |
 
-Quedan **4 faltantes**: el modo competitivo del pool (§1), NTP (§2), migrar los servicios
-con estado a StatefulSet (§3) y el video explicativo (§6). Los tres primeros se pueden
-escribir sin nube; solo su verificación necesita cluster.
+Quedan **3 faltantes**: el modo competitivo del pool (§1), NTP (§2) y el video explicativo
+(§6). Los dos primeros se pueden escribir sin nube; solo su verificación necesita cluster.
 
 ---
 
@@ -83,7 +82,7 @@ escribir sin nube; solo su verificación necesita cluster.
 
 | Ítem | Estado | Evidencia / qué falta |
 |---|---|---|
-| Base de datos | ✅ | `k8s/gke/apps/postgres-deployment.yaml` + PVC |
+| Base de datos | ✅ | `k8s/gke/apps/postgres-statefulset.yaml` + `volumeClaimTemplates` |
 | Sistema de colas | ✅ | `k8s/gke/infra/rabbitmq-*.yaml` |
 | Secretos | ✅ | `app-secrets`, plantilla en `secret.example.yaml.tpl`, valores fuera del repo |
 | ConfigMaps | ✅ | `k8s/gke/apps/configmap.yaml` |
@@ -97,15 +96,15 @@ escribir sin nube; solo su verificación necesita cluster.
 
 ## 3. Configuraciones para ambiente productivo real
 
-Era la sección más débil. Con el Cluster Autoscaler, los HPA y el `securityContext`
-agregados el 2026-08-04, queda un solo faltante: migrar Postgres, Redis y RabbitMQ de
-`Deployment` a `StatefulSet`.
+Era la sección más débil. Con el Cluster Autoscaler, los HPA, el `securityContext` y la
+migración de Postgres, Redis y RabbitMQ a `StatefulSet` (todo el 2026-08-04), queda sin
+workloads por pasar a `StatefulSet`.
 
 | Ítem | Estado | Evidencia / qué falta |
 |---|---|---|
 | Autoscaler por uso de CPU (Cluster Autoscaler / Karpenter) | ✅ | `infra/gke.tf`: bloque `autoscaling` en los pools `apps` (2-5) e `infra` (1-2). `monitoring` queda fijo a propósito |
 | HPA por métricas comunes o específicas | ✅ | `k8s/gke/apps/hpa.yaml`: frontend (2-6) y NCT (2-4) por CPU al 70%. worker-cpu queda fuera a propósito: su ciclo de vida lo maneja el TrP |
-| Servicios como StatefulSet para escalar con PVC | ❌ | Postgres, Redis y RabbitMQ son `Deployment` + PVC |
+| Servicios como StatefulSet para escalar con PVC | ❌ | Postgres, Redis y RabbitMQ migrados a `StatefulSet` con `volumeClaimTemplates` |
 | Limitación de recursos | ✅ | Los 7 workloads tienen `resources:` |
 | `securityContext` (no root, mínimo necesario) | ✅ | Los 7 workloads con `runAsNonRoot`, uid explícito, `seccompProfile` y `drop: [ALL]`. Pendiente menor: alertmanager, grafana y los 3 exporters de observabilidad |
 | tolerations / affinity / nodeSelector | 🟡 | `nodeSelector` en los 7 workloads (separa `pool=infra` de `pool=apps`), pero `tolerations`/`affinity` solo en observabilidad |
@@ -262,7 +261,8 @@ Se pueden escribir y revisar sin cluster; quedan listos para el próximo desplie
 - [ ] **Cluster Autoscaler**: bloque `autoscaling { min_node_count / max_node_count }` en
       los node pools de `infra/gke.tf`.
 - [ ] **HPA** para `worker-cpu` (por CPU) y para `frontend` (por CPU o por requests).
-- [ ] **Migrar Postgres, Redis y RabbitMQ a StatefulSet** con `volumeClaimTemplates`.
+- [x] **Migrar Postgres, Redis y RabbitMQ a StatefulSet** con `volumeClaimTemplates`;
+      se borraron los PVC estáticos y los `*-deployment.yaml`.
 - [ ] **NTP**: verificar la sincronización de los nodos (en GKE viene por `timesyncd` del
       SO); documentarlo y, si hace falta, exponer la métrica de drift del `node-exporter`.
 - [ ] **Endpoint público de estado**: un `/api/status` en la app que agregue el estado de

@@ -1,15 +1,26 @@
 apiVersion: apps/v1
-kind: Deployment
+kind: StatefulSet
 metadata:
   name: postgres
   namespace: sdypp
 spec:
   replicas: 1
-  strategy:
-    type: Recreate
+  serviceName: postgres
   selector:
     matchLabels:
       app: postgres
+  # PostgreSQL gestiona su propio storage de forma no compartida; un
+  # volumeClaimTemplate crea un PVC por réplica y reutiliza el PVC existente
+  # de la réplica 0 (migración desde el Deployment).
+  volumeClaimTemplates:
+    - metadata:
+        name: postgres-storage
+      spec:
+        accessModes:
+          - ReadWriteOnce
+        resources:
+          requests:
+            storage: 5Gi
   template:
     metadata:
       labels:
@@ -70,7 +81,3 @@ spec:
           volumeMounts:
             - name: postgres-storage
               mountPath: /var/lib/postgresql/data
-      volumes:
-        - name: postgres-storage
-          persistentVolumeClaim:
-            claimName: postgres-pvc

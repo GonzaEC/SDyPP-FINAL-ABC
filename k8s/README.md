@@ -9,10 +9,9 @@ k8s/
 ├── gke/
 │   ├── namespaces.yaml       # Namespace sdypp
 │   ├── infra/                # Servicios base (infra node pool)
-│   │   ├── redis-deployment.yaml
-│   │   ├── redis-pvc.yaml
+│   │   ├── redis-statefulset.yaml
 │   │   ├── redis-service.yaml
-│   │   ├── rabbitmq-deployment.yaml
+│   │   ├── rabbitmq-statefulset.yaml
 │   │   └── rabbitmq-service.yaml
 │   └── apps/                 # Aplicaciones (apps node pool)
 │       ├── frontend-deployment.yaml
@@ -21,8 +20,7 @@ k8s/
 │       ├── nct-service.yaml
 │       ├── trp-deployment.yaml
 │       ├── worker-cpu-deployment.yaml
-│       ├── postgres-deployment.yaml
-│       ├── postgres-pvc.yaml
+│       ├── postgres-statefulset.yaml
 │       ├── postgres-service.yaml
 │       ├── configmap.yaml
 │       ├── secret.example.yaml
@@ -39,10 +37,13 @@ k8s/
 
 | Servicio | Réplicas | Persistencia | Exposición |
 |----------|----------|-------------|-----------|
-| **Redis** | 1 | PVC 1 GiB + AOF | ClusterIP :6379 |
-| **RabbitMQ** | 1 | — (efímero) | ClusterIP :5672, LoadBalancer :5672 (externo) |
+| **Redis** | 1 | PVC 1 GiB + AOF (StatefulSet) | ClusterIP :6379 |
+| **RabbitMQ** | 1 | PVC 1 GiB (StatefulSet) | ClusterIP :5672, LoadBalancer :5672 (externo) |
 
 Redis tiene AOF habilitado (`--appendonly yes`) para que la blockchain sobreviva reinicios.
+Postgres, Redis y RabbitMQ son `StatefulSet` con `volumeClaimTemplates`: K8s crea un PVC por
+réplica (`<volumen>-<statefulset>-<ordinal>`, p. ej. `postgres-storage-postgres-0`) y los
+reutiliza entre reinicios.
 
 ### Capa apps (node pool `apps`, 2 nodos e2-medium spot)
 

@@ -1,15 +1,25 @@
 apiVersion: apps/v1
-kind: Deployment
+kind: StatefulSet
 metadata:
   name: redis
   namespace: sdypp
 spec:
   replicas: 1
-  strategy:
-    type: Recreate
+  serviceName: redis
   selector:
     matchLabels:
       app: redis
+  # Redis guarda el AOF en el volumen de la réplica 0 (PVC migrado desde el
+  # Deployment). Un volumeClaimTemplate permite replicar con PVC por réplica.
+  volumeClaimTemplates:
+    - metadata:
+        name: redis-storage
+      spec:
+        accessModes:
+          - ReadWriteOnce
+        resources:
+          requests:
+            storage: 1Gi
   template:
     metadata:
       labels:
@@ -68,7 +78,3 @@ spec:
           volumeMounts:
             - name: redis-storage
               mountPath: /data
-      volumes:
-        - name: redis-storage
-          persistentVolumeClaim:
-            claimName: redis-pvc
