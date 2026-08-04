@@ -29,8 +29,8 @@ blockchain de la cátedra).
 | 4. Pruebas del sistema | 4 | 3 | 0 | Cubierta: 36 unit tests + matriz de carga corrida |
 | 5. Pipelines | 5 | 0 | 0 | Completo (1 ítem N/A) — filtro de Pipeline 4 arreglado |
 | 6. Repositorio y entrega | 5 | 0 | 1 | Falta solo el video |
-| 7. Informe | 3 | 1 | 2 | Los datos están; falta ensamblar el documento |
-| **Total** | **44** | **8** | **9** | |
+| 7. Informe | 6 | 0 | 0 | Completa — `docs/INFORME.md` |
+| **Total** | **47** | **7** | **7** | |
 
 Lo que mejor está: **blockchain, pruebas y pipelines**. Lo único sin empezar es el
 **autoescalado** (§3) y el armado final del **informe** (§7) — para el que ya existe toda
@@ -177,12 +177,12 @@ ya se agregaron al filtro.
 
 | Ítem | Estado | Qué falta |
 |---|---|---|
-| Comparativa y análisis de resultados | 🟡 | Existen el benchmark GPU vs CPU de Pilar 1 (hasta 128×) y el análisis distribuido en `resultados/RESUMEN.md`. Falta unificarlos en el informe |
+| Comparativa y análisis de resultados | ✅ | [`docs/INFORME.md`](docs/INFORME.md) §2-§4 une el benchmark micro de Pilar 1 con las pruebas de sistema de Pilar 2 |
 | Diagrama de arquitectura | ✅ | En el README raíz y en `Pilar2/README.md` |
-| Cómo funciona el pool y cómo escala | ✅ | `resultados/RESUMEN.md` lo analiza con datos medidos: fragmentar el chunk domina sobre agregar workers |
-| Casos de prueba N transacciones / M recursos | ✅ | Matriz corrida con M=1 y M=2, CSVs por transacción en `resultados/` |
-| Gráficos comparativos de tiempos de respuesta | ❌ | Hay tablas, no gráficos. Los CSVs ya tienen los datos crudos para generarlos |
-| Reflexión crítica (limitaciones, mejoras, contexto real) | ❌ | No escrita |
+| Cómo funciona el pool y cómo escala | ✅ | `INFORME.md` §3 con datos medidos: fragmentar el chunk domina sobre agregar workers |
+| Casos de prueba N transacciones / M recursos | ✅ | Matriz corrida con M=1 y M=2, CSVs por transacción en `Pilar2/P5/resultados/` |
+| Gráficos comparativos de tiempos de respuesta | ✅ | 4 gráficos en `Pilar2/P5/resultados/graficos/`, regenerables con `python Pilar2/P5/graficos.py` |
+| Reflexión crítica (limitaciones, mejoras, contexto real) | ✅ | `INFORME.md` §5: limitaciones de arquitectura y de medición, 5 mejoras priorizadas, y por qué una blockchain propia con PoW no es la solución correcta para este negocio |
 
 ---
 
