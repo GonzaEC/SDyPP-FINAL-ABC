@@ -8,6 +8,11 @@ on:
       - "Pilar2/P5/gpu-server.py"
       - "Pilar2/P5/brute_force_range.cu"
       - "Pilar2/P5/Dockerfile.worker"
+      # observability.py y requirements.txt se hornean en la imagen
+      # (`COPY . .` y `pip install -r requirements.txt`), así que un cambio en
+      # ellos debe redesplegar los workers GPU.
+      - "Pilar2/P5/observability.py"
+      - "Pilar2/P5/requirements.txt"
       - "k8s/profesor/**"
   workflow_dispatch:
 

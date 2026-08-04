@@ -35,7 +35,12 @@ NCT_BLOCKS = Counter("nct_blocks_total", "Bloques minados y confirmados")
 NCT_MINING_SECONDS = Histogram(
     "nct_block_mining_seconds",
     "Tiempo desde que se publica la tarea hasta que llega una solucion valida",
-    buckets=(0.5, 1, 2, 5, 10, 20, 30, 60, 120, 180),
+    ["difficulty"], buckets=(0.5, 1, 2, 5, 10, 20, 30, 60, 120, 180),
+)
+NCT_VALIDATION_SECONDS = Histogram(
+    "nct_block_validation_seconds",
+    "Tiempo de verificar el PoW de una solucion (hash MD5 + dificultad)",
+    ["difficulty"], buckets=(0.0001, 0.0005, 0.001, 0.005, 0.01, 0.05, 0.1),
 )
 NCT_TX_RECEIVED = Counter("nct_transactions_received_total", "Transacciones recibidas", ["tx_type"])
 NCT_SOLUTIONS_REJECTED = Counter("nct_solutions_rejected_total", "Soluciones descartadas por el NCT", ["reason"])
@@ -784,7 +789,9 @@ def _mine_one_block():
         # activado/restaurado) mientras el worker minaba, su solución sigue
         # siendo válida para el contrato original. Releer aquí causaba
         # invalid_pow_solution espurios cuando el gpu-server flapeaba.
+        validation_start = time.time()
         if not verify_hash(data, nonce, hash_recibido, difficulty):
+            NCT_VALIDATION_SECONDS.labels(difficulty=difficulty).observe(time.time() - validation_start)
             calculated_debug = hashlib.md5((data + str(nonce)).encode()).hexdigest()
             r.rpush("logs", json.dumps({
                 "timestamp": time.time(),
@@ -807,6 +814,7 @@ def _mine_one_block():
             r.ltrim("pending_transactions", pending_count, -1)
             return None
 
+        NCT_VALIDATION_SECONDS.labels(difficulty=difficulty).observe(time.time() - validation_start)
         block["nonce"] = nonce
         block["block_hash"] = hash_recibido
         if not validate_block(block, ultimo["block_hash"]):
@@ -821,7 +829,7 @@ def _mine_one_block():
 
         confirmed_at = time.time()
         NCT_BLOCKS.inc()
-        NCT_MINING_SECONDS.observe(confirmed_at - mine_start)
+        NCT_MINING_SECONDS.labels(difficulty=difficulty).observe(confirmed_at - mine_start)
         mining_span.set_attribute("block_index", block["index"])
         r.rpush("logs", json.dumps({
             "timestamp": confirmed_at,

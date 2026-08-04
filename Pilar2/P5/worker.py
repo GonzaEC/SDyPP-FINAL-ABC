@@ -28,6 +28,11 @@ obs.start_metrics_server()
 WORKER_TYPE = "gpu"
 WORKER_TASKS = Counter("worker_tasks_processed_total", "Tareas procesadas", ["worker_type"])
 WORKER_SOLUTIONS = Counter("worker_solutions_found_total", "Soluciones encontradas", ["worker_type"])
+WORKER_HASHES = Counter("worker_hashes_total", "Hashes MD5 calculados", ["worker_type"])
+WORKER_QUEUE_LATENCY = Histogram(
+    "worker_task_queue_latency_seconds", "Latencia entre que el TrP publica la sub-tarea y el worker la consume",
+    ["worker_type"], buckets=(0.001, 0.005, 0.01, 0.05, 0.1, 0.5, 1, 2, 5, 10),
+)
 WORKER_TASK_SECONDS = Histogram(
     "worker_task_duration_seconds", "Duracion del minado de una sub-tarea (incluye HTTP a gpu-server)",
     ["worker_type"], buckets=(0.05, 0.1, 0.25, 0.5, 1, 2, 5, 10, 30, 60),
@@ -104,6 +109,13 @@ def callback(ch, method, properties, body):
     try:
         tarea = json.loads(body)
         log.info(f"[{WORKER_ID}] Procesando rango [{tarea['start']} - {tarea['end']}]...")
+
+        # Latencia de cola: delta entre publicar (TrP) y consumir (acá).
+        published_at = float(tarea.get("_published_at") or time.time())
+        WORKER_QUEUE_LATENCY.labels(worker_type=WORKER_TYPE).observe(time.time() - published_at)
+        # Hashes = tamaño del rango delegado al gpu-server (el cómputo real es
+        # por fuerza bruta sobre ese rango completo en la GPU).
+        WORKER_HASHES.labels(worker_type=WORKER_TYPE).inc(tarea["end"] - tarea["start"] + 1)
 
         # Continuamos la traza propagada por el TrP (contexto en el payload).
         parent_ctx = obs.extract_trace_context(tarea.get("_trace"))

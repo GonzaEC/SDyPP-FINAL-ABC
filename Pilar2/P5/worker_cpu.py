@@ -27,6 +27,11 @@ obs.start_metrics_server()
 WORKER_TYPE = "cpu"
 WORKER_TASKS = Counter("worker_tasks_processed_total", "Tareas procesadas", ["worker_type"])
 WORKER_SOLUTIONS = Counter("worker_solutions_found_total", "Soluciones encontradas", ["worker_type"])
+WORKER_HASHES = Counter("worker_hashes_total", "Hashes MD5 calculados", ["worker_type"])
+WORKER_QUEUE_LATENCY = Histogram(
+    "worker_task_queue_latency_seconds", "Latencia entre que el TrP publica la sub-tarea y el worker la consume",
+    ["worker_type"], buckets=(0.001, 0.005, 0.01, 0.05, 0.1, 0.5, 1, 2, 5, 10),
+)
 WORKER_TASK_SECONDS = Histogram(
     "worker_task_duration_seconds", "Duracion del minado de una sub-tarea",
     ["worker_type"], buckets=(0.05, 0.1, 0.25, 0.5, 1, 2, 5, 10, 30),
@@ -106,11 +111,22 @@ threading.Thread(target=heartbeat_loop, daemon=True).start()
 # El rango start/end es el fragmento que le asignó el TrP a este worker. Si no encuentra nada en ese rango, devuelve None, None.
 # Si el hash resultante empieza con el prefijo de dificultad (ej: "00"), se encontró la solución
 def mine_cpu(data: str, difficulty: str, start: int, end: int):
-    for nonce in range(start, end + 1):
-        text = data + str(nonce)
-        h = hashlib.md5(text.encode()).hexdigest()
-        if h.startswith(difficulty):
-            return nonce, h
+    # Contamos los hashes localmente y los sumamos al contador de una sola vez
+    # al terminar: incrementar el counter de prometheus dentro del bucle (que
+    # puede correr millones de iteraciones por chunk) tiene costo de lock por
+    # llamada y ralentiza el minado.
+    hashes = 0
+    try:
+        for nonce in range(start, end + 1):
+            text = data + str(nonce)
+            h = hashlib.md5(text.encode()).hexdigest()
+            hashes += 1
+            if h.startswith(difficulty):
+                WORKER_HASHES.labels(worker_type=WORKER_TYPE).inc(hashes)
+                return nonce, h
+    except Exception:
+        pass
+    WORKER_HASHES.labels(worker_type=WORKER_TYPE).inc(hashes)
     return None, None
 
 # Cuando RabbitMQ entrega un mensaje de la cola tareas, llama a esta función.
@@ -128,6 +144,9 @@ def callback(ch, method, properties, body):
         tarea = json.loads(body)
 
         log.info(f"[{WORKER_ID}] Procesando rango [{tarea['start']} - {tarea['end']}]...")
+
+        logging_current = tarea.get("_published_at") or time.time()
+        WORKER_QUEUE_LATENCY.labels(worker_type=WORKER_TYPE).observe(time.time() - float(logging_current))
 
         # Continuamos la traza propagada por el TrP (contexto en el payload).
         parent_ctx = obs.extract_trace_context(tarea.get("_trace"))

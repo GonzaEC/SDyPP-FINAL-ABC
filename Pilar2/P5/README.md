@@ -66,6 +66,66 @@ El TrP (`monitor_loop`, cada 15s) revisa `heartbeat:gpu-server`:
 El estado vive en Redis (`trp:fallback_active`) con `SET NX` para que, con N réplicas de TrP,
 solo una ejecute la transición.
 
+## Protocolo del pool: cooperativo vs. competitivo
+
+El pool **es cooperativo por reparto de rangos disjuntos**: el TrP divide el espacio de nonces
+`[0, TOTAL)` en chunks de `CHUNK_SIZE = 2_500_000` y cada worker recibe un rango único y
+disjunto (`[start, end]`). Esto garantiza que **no hay trabajo duplicado**: entre todos los
+workers vivos se barre el espacio completo exactamente una vez, y cualquiera de ellos puede
+encontrar el nonce ganador.
+
+```
+nonces:  0 ───────────────────────── 10_000_000
+chunks: [0, 2.5M)  [2.5M, 5M)  [5M, 7.5M)  [7.5M, 10M)
+worker:      A          B          A            C
+```
+
+### Por qué se eligió así
+
+1. **Determinismo y balance justo**: cada tarea tiene tiempo de cómputo acotado y conocido
+   (a lo sumo `CHUNK_SIZE` hashes), lo que hace el escalado predecible: duplicar workers a lo
+   sumo duplica el throughput de barrido.
+2. **Sin coordinación entre workers**: al ser rangos disjuntos, los workers no necesitan
+   acordar entre sí quién mina qué; el único coordinador es el TrP, un punto simple y testeable.
+3. **Idempotencia del resultado**: como todos los workers prueban datos idénticos (mismo bloque,
+   misma dificultad), cualquier rango que encuentre el nonce gana; la verificación de PoW del NCT
+   es la autoridad final, no importa quién reporte.
+
+### Qué implicaría el modo competitivo
+
+En un modo competitivo todos los workers minarían el **mismo rango** y el primero en reportar
+una solución válida ganaría el bloque (la cola `soluciones` es FIFO por worker y el NCT acepta
+la primera válida que llega). Ventajas: no depende de que el TrP reparta bien y es más simple
+de razonar. Costos: duplica/`N`-uplica el trabajo total, satura CPU/GPU con hashes redundantes
+y vuelve el tiempo de resolución dependiente del worker más rápido en vez del esfuerzo total.
+Para esta arquitectura (un pool pequeño de workers cooperando sobre un único espacio de nonces)
+el modo competitivo no aporta — solo consume cómputo. Se deja documentado como decisión
+(ver ADR correspondiente) y el protocolo actual queda clasificado como **cooperativo por
+partición del espacio**.
+
+## Manejo de fallas en workers
+
+Qué pasa cuando un worker se cae o una tarea falla, capa por capa:
+
+1. **Mensaje sin ackear** (`auto_ack=False` + ack manual): si el worker muere a mitad del
+   minado, RabbitMQ **reentrega** el mensaje a otro worker en vez de perder la tarea. El ack
+   se emite recién después de procesar.
+2. **`basic_nack(requeue=True)` con reintento único**: si procesar la tarea lanza excepción,
+   el worker la reintenta **una sola vez** (usa `method.redelivered` como contador). Si vuelve
+   a fallar, hace `basic_ack` y la suelta, evitando el requeue infinito (poison message) y la
+   tormenta de reintentos que saturó el pipeline (bug M3). El mismo patrón está en
+   `worker_cpu.py` y `worker.py`.
+3. **`MINING_TIMEOUT_SECONDS` en el NCT** (default 180s): si ninguna solución llega a tiempo,
+   el auto-miner descarta la tarea, `NCT_MINING_TIMEOUTS` incrementa y el siguiente ciclo
+   re-publica un task nuevo. Es la red de seguridad final si el problema es de red, no de worker.
+4. **Heartbeat con TTL**: cada worker y el gpu-server publican `heartbeat:{id}` / `heartbeat:gpu-server`
+   en Redis con TTL. Si el worker muere, su clave desaparece sola y el TrP deja de contarlo;
+   si muere la GPU, se dispara el fallback a CPU (sección anterior).
+
+Combinados: la reentrega de RabbitMQ cubre la caída brusca, el reintento único cubre fallas
+transitorias, el timeout del NCT cubre el agotamiento de reintentos, y el heartbeat/fallback
+cubre la pérdida de capacidad de minado.
+
 ## Endpoints del NCT (ticket-aware)
 
 | Método | Ruta | Función |
@@ -86,8 +146,16 @@ Firma: ECDSA **P-256 / SHA-256 / IEEE P1363** (raw 64 bytes), sobre `canonicaliz
 Todos los servicios usan [observability.py](observability.py):
 
 - **Métricas** Prometheus en `/metrics` (NCT y gpu-server montan en su puerto; TrP/workers
-  abren `METRICS_PORT`, default 9000). Ej: `nct_blocks_total`, `nct_block_mining_seconds`,
-  `trp_gpu_alive`, `trp_fallback_active`, `worker_solutions_found_total{worker_type}`.
+  abren `METRICS_PORT`, default 9000). Métricas de dominio:
+  - NCT: `nct_blocks_total`, `nct_block_mining_seconds{difficulty}`, `nct_block_validation_seconds{difficulty}`,
+    `nct_transactions_received_total`, `nct_solutions_rejected_total`, `nct_mining_timeouts_total`.
+  - TrP: `trp_tasks_subdivided_total`, `trp_chunks_published_total`, `trp_gpu_alive`,
+    `trp_fallback_active`, `trp_cpu_scale_events_total`.
+  - Workers: `worker_tasks_processed_total`, `worker_solutions_found_total`, `worker_hashes_total`,
+    `worker_task_duration_seconds`, `worker_task_queue_latency_seconds`.
+  - gpu-server: `gpu_mine_requests_total`, `gpu_mine_duration_seconds`, `gpu_solutions_found_total`.
+  - La tasa de éxito CPU vs GPU es `worker_solutions_found_total / worker_tasks_processed_total`
+    por `worker_type`; los hashes/segundo se derivan de `rate(worker_hashes_total[5m])`.
 - **Logs** JSON a stdout (recogidos por Alloy → Loki).
 - **Trazas** OTLP → Tempo, con el contexto W3C propagado por RabbitMQ (campo `_trace` en el
   payload), de modo que una operación se sigue NCT → TrP → worker de punta a punta.

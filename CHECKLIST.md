@@ -23,14 +23,14 @@ blockchain de la cátedra).
 
 | Sección | ✅ | 🟡 | ❌ | Estado |
 |---|---|---|---|---|
-| 1. Funciones de blockchain | 9 | 3 | 4 | Sólido, faltan métricas y el modo competitivo |
+| 1. Funciones de blockchain | 14 | 1 | 1 | Sólido: métricas listas; falta el modo competitivo |
 | 2. Plataforma escalable en K8s | 7 | 1 | 1 | Casi completo |
 | 3. Ambiente productivo real | 6 | 2 | 4 | El más flojo: falta todo el eje de autoescalado |
 | 4. Pruebas del sistema | 0 | 1 | 6 | **El hueco más grande del proyecto** |
-| 5. Pipelines | 5 | 0 | 0 | Completo (1 ítem N/A) |
-| 6. Repositorio y entrega | 4 | 0 | 2 | Falta video y declaración de IA |
+| 5. Pipelines | 5 | 0 | 0 | Completo (1 ítem N/A) — filtro de Pipeline 4 arreglado |
+| 6. Repositorio y entrega | 5 | 0 | 1 | Falta solo el video |
 | 7. Informe | 1 | 2 | 3 | No arrancado |
-| **Total** | **32** | **9** | **20** | |
+| **Total** | **38** | **7** | **16** | |
 
 Lo que mejor está: **blockchain, pipelines y repositorio**. Lo que peor: **pruebas e
 informe**, que además son las dos secciones que el checklist pide demostrar con evidencia
@@ -48,9 +48,9 @@ medida, no con código.
 | Condiciones de validación del ganador | ✅ | El NCT recalcula MD5 y verifica la dificultad antes de aceptar la solución |
 | Worker CPU en funcionamiento | ✅ | `Pilar2/P5/worker_cpu.py` |
 | Worker GPU en funcionamiento | ✅ | `worker.py` + `gpu-server.py` + `brute_force_range.cu` |
-| Protocolo: competencia y/o coordinación | 🟡 | El flujo está en `Pilar2/P5/README.md`, pero no discute el eje competencia vs coordinación |
+| Protocolo: competencia y/o coordinación | ✅ | `Pilar2/P5/README.md` ahora documenta el eje cooperativo (reparto de rangos disjuntos) vs competitivo y por qué se eligió el primero |
 | Detalle de arquitectura CUDA / versiones | ✅ | `Dockerfile.worker` compila `sm61`, `sm86` y `sm89`; Pilar 1 documenta el entorno (Colab T4) |
-| Manejo de fallas en workers | 🟡 | `basic_nack(requeue=True)` en el worker CPU + `MINING_TIMEOUT_SECONDS` en el NCT. Falta documentarlo y probarlo |
+| Manejo de fallas en workers | 🟡 | `basic_nack(requeue=True)` en el worker CPU + `MINING_TIMEOUT_SECONDS` en el NCT. Documentado en `Pilar2/P5/README.md`; falta probarlo sistemáticamente |
 | Keep-alive de mineros GPU hacia el pool | ✅ | Cola `heartbeat_gpu` → `heartbeat:gpu-server` con TTL en Redis |
 | Fallback ante ausencia de GPUs | ✅ | `activate_fallback()`: baja dificultad a `"0"` y escala worker-cpu vía API de K8s |
 
@@ -59,17 +59,24 @@ medida, no con código.
 | Métrica pedida | Estado | Detalle |
 |---|---|---|
 | Tasa de éxito CPU vs GPU | ✅ | Derivable: `worker_solutions_found_total{worker_type}` / `worker_tasks_processed_total` |
-| Hashes por segundo (por nodo) | ❌ | No existe ninguna métrica de throughput de hashing |
-| Tiempos de minería por prefijo | 🟡 | `nct_block_mining_seconds` existe pero **sin label de dificultad**, así que no se puede desagregar por prefijo |
-| Latencia entre RabbitMQ y worker | ❌ | No existe |
-| Tiempo de validación del bloque | ❌ | Se mide el minado, no la validación |
+| Hashes por segundo (por nodo) | ✅ | `worker_hashes_total{worker_type}`; la tasa sale con `rate(...[5m])` en Grafana |
+| Tiempos de minería por prefijo | ✅ | `nct_block_mining_seconds{difficulty}` — ahora con label de dificultad |
+| Latencia entre RabbitMQ y worker | ✅ | `worker_task_queue_latency_seconds`, con el `_published_at` que inyecta el TrP al publicar |
+| Tiempo de validación del bloque | ✅ | `nct_block_validation_seconds{difficulty}` |
 
-**Métricas que sí existen hoy:** `nct_blocks_total`, `nct_block_mining_seconds`,
-`nct_mining_timeouts_total`, `nct_solutions_rejected_total`, `nct_transactions_received_total`,
+**Métricas que existen hoy:** `nct_blocks_total`, `nct_block_mining_seconds{difficulty}`,
+`nct_block_validation_seconds{difficulty}`, `nct_mining_timeouts_total`,
+`nct_solutions_rejected_total`, `nct_transactions_received_total`,
 `trp_chunks_published_total`, `trp_tasks_subdivided_total`, `trp_cpu_scale_events_total`,
 `trp_gpu_alive`, `trp_fallback_active`, `worker_tasks_processed_total`,
-`worker_solutions_found_total`, `worker_task_duration_seconds`, `gpu_mine_requests_total`,
+`worker_solutions_found_total`, `worker_hashes_total`, `worker_task_duration_seconds`,
+`worker_task_queue_latency_seconds`, `gpu_mine_requests_total`,
 `gpu_mine_duration_seconds`, `gpu_solutions_found_total`.
+
+> Las 4 métricas nuevas se agregaron en el Bloque 1 y se verificaron con un mint real
+> (2026-08-04): `nct_block_mining_seconds{difficulty="0"}` y `nct_block_validation_seconds{difficulty="0"}`
+> registraron 1 observación; `worker_hashes_total{cpu}=58` y
+> `worker_task_queue_latency_seconds` con 4 muestras.
 
 ---
 
@@ -142,9 +149,11 @@ La sección mejor cubierta.
 | Pipeline de VMs externas | ➖ | Los nodos GPU adicionales vienen del cluster del profesor, no de VMs propias |
 | Gitleaks que hace fallar el pipeline | ✅ | `gitleaks.yml` como workflow reutilizable, gate de los otros 5 |
 
-**Defecto detectado:** el filtro de paths de Pipeline 4 no incluye `observability.py`, pero
-el `Dockerfile.worker` lo hornea (`COPY . .`) y tanto `worker.py` como `gpu-server.py` lo
-importan. Un cambio en ese archivo **no redespliega los workers GPU**.
+**Defecto arreglado (Bloque 1):** el filtro de paths de Pipeline 4 no incluía
+`observability.py` ni `requirements.txt`, pero el `Dockerfile.worker` los hornea
+(`COPY . .` y `pip install -r requirements.txt`) y tanto `worker.py` como `gpu-server.py`
+importan `observability`. Un cambio en esos archivos **no redesplegaba los workers GPU**;
+ya se agregaron al filtro.
 
 ---
 
@@ -157,7 +166,7 @@ importan. Un cambio en ese archivo **no redespliega los workers GPU**.
 | Sin `.env`, credenciales ni secrets commiteados | ✅ | Verificado: solo plantillas. `.gitignore` cubre `*.pem`, `*.manual`, `.env*`, `tfvars` |
 | App ejecutable desde terminal, sin IDE | ✅ | `docker compose up --build` desde la raíz levanta el sistema completo |
 | **Video explicativo subido al repo** | ❌ | No existe |
-| **Declaración de herramientas de IA usadas** | ❌ | Hay `CLAUDE.md` y `AGENTS.md` en el repo, pero ninguna declaración explícita de qué se usó y cómo |
+| **Declaración de herramientas de IA usadas** | ✅ | `docs/USO-DE-IA.md` — declaración de qué se usó y cómo (asesor, revisado, sin secretos). Falta que el equipo la confirme/ajuste |
 
 ---
 
@@ -199,20 +208,23 @@ Sin esto no se puede medir nada, y §4 y §7 dependen enteramente de medir.
 
 ## Bloque 1 — Barato, alto impacto, sin nube (1-2 días)
 
-- [ ] **Agregar las 4 métricas faltantes** (§1). Todas van en `Pilar2/P5/observability.py`
-      y sus servicios:
-  - `worker_hashes_per_second` (o un counter `worker_hashes_total` y calcular la tasa en Grafana)
-  - label `difficulty` en `nct_block_mining_seconds` — habilita "tiempos por prefijo"
-  - `worker_task_queue_latency_seconds`: timestamp al publicar en `tareas`, delta al consumir
-  - `nct_block_validation_seconds`: alrededor de la verificación de MD5 + dificultad
-- [ ] **Documentar el protocolo** (§1): sección en `Pilar2/P5/README.md` explicando que el
-      pool es cooperativo por reparto de rangos disjuntos, por qué se eligió así, y qué
-      implicaría el modo competitivo.
-- [ ] **Documentar el manejo de fallas de workers** (§1): qué pasa cuando uno cae, cómo
-      actúan `basic_nack(requeue=True)` y `MINING_TIMEOUT_SECONDS`.
-- [ ] **Declaración de uso de IA** (§6): archivo `docs/USO-DE-IA.md` con qué herramientas se
-      usaron y para qué.
-- [ ] **Arreglar el filtro de Pipeline 4** (§5): agregar `Pilar2/P5/observability.py` y
+- [x] **Agregar las 4 métricas faltantes** (§1). Se implementaron en los servicios
+      (no en `observability.py`, que es solo plumbing) y se verificaron con un mint real:
+  - `worker_hashes_total{worker_type}` en `worker_cpu.py` (contando MD5) y `worker.py`
+    (aprox. por rango delegado) — la tasa sale con `rate(...[5m])` en Grafana
+  - label `difficulty` en `nct_block_mining_seconds` en `nct.py` — habilita "tiempos por prefijo"
+  - `worker_task_queue_latency_seconds`: `_published_at` que inyecta `trp.py` al publicar,
+    delta al consumir en ambos workers
+  - `nct_block_validation_seconds{difficulty}`: alrededor de la verificación de MD5 + dificultad
+- [x] **Documentar el protocolo** (§1): sección **"Protocolo del pool: cooperativo vs.
+      competitivo"** en `Pilar2/P5/README.md` (rango disjunto por chunk, por qué se eligió,
+      qué implicaría el modo competitivo).
+- [x] **Documentar el manejo de fallas de workers** (§1): sección **"Manejo de fallas en
+      workers"** en `Pilar2/P5/README.md` (reentrega sin ack, reintento único, timeout del NCT,
+      heartbeat/fallback).
+- [x] **Declaración de uso de IA** (§6): `docs/USO-DE-IA.md` con qué herramientas se usaron
+      y para qué. *Pendiente: confirmación/ajustes del equipo.*
+- [x] **Arreglar el filtro de Pipeline 4** (§5): se agregaron `Pilar2/P5/observability.py` y
       `requirements.txt` a los paths.
 
 ## Bloque 2 — Pruebas (§4) — el hueco más grande (3-5 días)

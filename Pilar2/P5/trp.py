@@ -267,6 +267,10 @@ def subdivide_and_publish(tarea: dict):
                 "data":       data,
                 "start":      chunk_start,
                 "end":        chunk_end,
+                # Marca de tiempo de publicación: los workers lo usan para
+                # calcular la latencia de la cola RabbitMQ (métrica
+                # worker_task_queue_latency_seconds).
+                "_published_at": time.time(),
                 "_trace":     trace_ctx,
             }
 
