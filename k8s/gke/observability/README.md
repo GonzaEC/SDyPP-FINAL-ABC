@@ -56,6 +56,35 @@ en un solo compose. Grafana en http://localhost:3001. Configs en `observability/
 - **Frontend**: `app/src/lib/observability/{metrics,log}.ts`,
   `app/src/app/api/metrics/route.ts`, `app/src/instrumentation.ts` (`@vercel/otel`).
 
+## Sincronización de relojes (NTP)
+
+Los servicios distribuidos (NCT, TrP, workers) dependen de que los relojes de los
+nodos estén alineados — sobre todo para las mediciones de latencia
+(`worker_task_queue_latency_seconds`) y los timeouts del NCT. No hace falta
+provisionar un daemon NTP propio:
+
+- Los nodos **GKE (COS)** ya sincronizan con **`systemd-timesyncd`** contra el
+  servidor NTP interno de Google (`metadata.google.internal`, 169.254.169.254).
+- **node-exporter** corre como DaemonSet en todos los nodos con su collector
+  `timex` habilitado por defecto, que expone el **drift del kernel**:
+  - `node_timex_offset_seconds` → desvío actual (deriva), en segundos.
+  - `node_timex_status` → bit `0x0040` despejado = reloj **sincronizado**;
+    set = `STA_UNSYNC`.
+
+Verificación con Prometheus (port-forward `9090:9090`):
+
+```promql
+# Desvío por nodo (debería estar en el orden de los µs/ms)
+node_timex_offset_seconds{cluster="sdypp"}
+
+# Nodos desincronizados
+count(node_timex_status & 0x0040 > 0) by (node)
+```
+
+No hay reloj único que derive: es sin estado y desacoplado. Si alguna vez hiciera
+falta un pool de NTP propio (p. ej. nodos que no pasan por la red de GKE), se puede
+documentar/comprobar con `chrony` y monitorear su `reachability`; hoy no aplica.
+
 ## Limitación conocida: workers GPU (cluster del profesor)
 
 Los workers GPU y el `gpu-server` corren en el **cluster del profesor**, en otra
