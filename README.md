@@ -84,22 +84,30 @@ validar tickets on-chain.
 
 ## Cómo correr localmente
 
+El `docker-compose.yml` de la raíz levanta **todo el sistema** sin necesidad de nube:
+app web, blockchain (NCT, TrP, worker CPU), Postgres, Redis, RabbitMQ y el stack de
+observabilidad.
+
 ```bash
-# 1. Levantar Postgres
-cd app && docker compose up -d postgres
-
-# 2. Instalar dependencias y migrar
-npm install
-npx prisma migrate deploy
-
-# 3. Arrancar el dev server
-npm run dev
-# → http://localhost:3000
+docker compose up --build
 ```
 
-Para el stack completo (app + blockchain):
+| Servicio | URL |
+|----------|-----|
+| App | http://localhost:3000 |
+| NCT (API de la blockchain) | http://localhost:8000/status |
+| Grafana | http://localhost:3001 (admin/admin) |
+| Prometheus | http://localhost:9090 |
+
+El primer arranque tarda: construye cuatro imágenes. No incluye el worker GPU, que
+necesita CUDA y una placa NVIDIA — localmente mina el worker CPU (ver
+[Pilar2/P5/README.md](Pilar2/P5/README.md)).
+
+Para desarrollar la app con hot reload, levantando solo sus dependencias:
+
 ```bash
-docker compose up
+docker compose up -d postgres nct trp worker-cpu redis rabbitmq
+cd app && npm install && npm run dev
 ```
 
 ## Documentación por componente
@@ -124,6 +132,8 @@ Cada parte del sistema tiene su propio README. Índice:
 
 ```
 SDyPP-FINAL-ABC/
+├── docker-compose.yml      # Stack completo local (app + blockchain + observabilidad)
+├── docker/                 # Configs de apoyo del compose (RabbitMQ TLS)
 ├── app/                    # App web (Next.js) — frontend + backend
 ├── Pilar1/                 # Prácticas de CUDA/GPU (Hit1-Hit7)
 ├── Pilar2/                 # Blockchain distribuida (P1-P5)

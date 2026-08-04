@@ -41,12 +41,12 @@ En Grafana ya vienen provisionados los 3 datasources y el dashboard
 
 ## Local (sin cluster)
 
-Desde `app/`:
+Desde la **raíz del repo**:
 ```bash
-docker compose up
+docker compose up --build
 ```
-Levanta app + Postgres + el stack de observabilidad en un solo compose.
-Grafana en http://localhost:3001. Configs en `observability/local/`.
+Levanta el sistema completo —app, blockchain e infra— con el stack de observabilidad
+en un solo compose. Grafana en http://localhost:3001. Configs en `observability/local/`.
 
 ## Instrumentación en el código
 

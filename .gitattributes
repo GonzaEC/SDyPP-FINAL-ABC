@@ -1,0 +1,31 @@
+# Defaults: dejar que git detecte y normalice texto.
+* text=auto eol=lf
+
+# Forzar LF para todo lo que corre dentro de un container Linux,
+# independiente del SO de quien hizo el clone.
+#
+# El caso crítico es docker-compose.yml: el servicio `rabbitmq-certs` lleva un
+# script de shell embebido en un bloque YAML. Con CRLF, `sh -c` recibe los \r
+# como parte de cada comando y falla con errores que no dicen nada útil.
+*.sh                 text eol=lf
+*.bash               text eol=lf
+docker-compose*.yml  text eol=lf
+Dockerfile           text eol=lf
+Dockerfile.*         text eol=lf
+entrypoint*          text eol=lf
+*.yml                text eol=lf
+*.yaml               text eol=lf
+*.conf               text eol=lf
+*.py                 text eol=lf
+*.cu                 text eol=lf
+enabled_plugins      text eol=lf
+
+# Binarios — no normalizar.
+*.png   binary
+*.jpg   binary
+*.jpeg  binary
+*.gif   binary
+*.ico   binary
+*.woff  binary
+*.woff2 binary
+*.pdf   binary

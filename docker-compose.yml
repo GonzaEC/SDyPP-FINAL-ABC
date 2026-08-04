@@ -1,0 +1,289 @@
+# Stack COMPLETO del sistema, local y sin nube: app web + blockchain propia
+# (NCT, TrP, worker CPU) + infra (Postgres, Redis, RabbitMQ) + observabilidad
+# (Prometheus, Grafana, Loki, Tempo, Alloy).
+#
+#   docker compose up --build
+#
+# Accesos:
+#   App          http://localhost:3000
+#   NCT (API)    http://localhost:8000/status  ·  /blockchain  ·  /metrics
+#   Grafana      http://localhost:3001   (admin/admin)
+#   Prometheus   http://localhost:9090
+#   RabbitMQ UI  https://localhost:15671 (guest/guest, cert autofirmado)
+#
+# Diferencias a propósito respecto de GKE:
+#   - No hay worker GPU. Requiere CUDA y una placa NVIDIA; el minado local lo
+#     hace worker-cpu (hashlib puro). Ver el comentario en `trp`.
+#   - RabbitMQ no tiene el tuning de memoria del cluster (ver docker/rabbitmq/).
+#   - Los certs TLS son autofirmados y efímeros, no vienen de un Secret.
+
+name: sdypp
+
+services:
+  # ==========================================================================
+  # Infra
+  # ==========================================================================
+  postgres:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: entradas
+      POSTGRES_PASSWORD: entradas
+      POSTGRES_DB: entradas
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U entradas -d entradas"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+
+  # OJO: el nombre del servicio tiene que ser exactamente `redis`. No es
+  # configurable por env var — nct.py, trp.py y worker_cpu.py hacen
+  # redis.Redis(host="redis", ...) hardcodeado. Si lo renombrás, la blockchain
+  # no encuentra su estado y ninguno de los tres arranca.
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    # appendonly = AOF, igual que en k8s/gke/infra/redis-deployment.yaml: la
+    # cadena de bloques sobrevive a un `docker compose restart`.
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - redis_data:/data
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+
+  # Genera el par de certs autofirmados que RabbitMQ necesita para el listener
+  # TLS. Corre una sola vez por volumen: si los certs ya están, sale enseguida.
+  # Existe porque k8s/gke/infra/tls/ está en .gitignore — un clone limpio del
+  # repo no tiene certs, y sin ellos RabbitMQ no levanta y la blockchain entera
+  # se queda esperando.
+  rabbitmq-certs:
+    image: alpine:3.20
+    command:
+      - sh
+      - -c
+      - |
+        set -e
+        if [ -f /tls/rabbitmq-cert.pem ] && [ -f /tls/rabbitmq-key.pem ]; then
+          echo "[certs] ya existen, nada que hacer"
+          exit 0
+        fi
+        apk add --no-cache openssl >/dev/null
+        openssl req -x509 -newkey rsa:2048 -nodes -days 3650 \
+          -subj "/CN=rabbitmq" \
+          -addext "subjectAltName=DNS:rabbitmq,DNS:localhost,IP:127.0.0.1" \
+          -keyout /tls/rabbitmq-key.pem \
+          -out /tls/rabbitmq-cert.pem
+        # El proceso de RabbitMQ corre como uid 999 y tiene que poder leer la
+        # clave. Legible por todos es aceptable acá: es un cert efímero de
+        # desarrollo que solo protege tráfico dentro de la red de compose.
+        chmod 644 /tls/rabbitmq-key.pem
+        echo "[certs] generados"
+    volumes:
+      - rabbitmq_tls:/tls
+
+  # Igual que con redis: el nombre `rabbitmq` está hardcodeado en los tres
+  # servicios de Python. No renombrar.
+  rabbitmq:
+    image: rabbitmq:3-management
+    restart: unless-stopped
+    depends_on:
+      rabbitmq-certs:
+        condition: service_completed_successfully
+    volumes:
+      - rabbitmq_tls:/tls:ro
+      - ./docker/rabbitmq/rabbitmq.conf:/etc/rabbitmq/rabbitmq.conf:ro
+      - ./docker/rabbitmq/enabled_plugins:/etc/rabbitmq/enabled_plugins:ro
+    ports:
+      - "5671:5671"   # AMQP sobre TLS (no hay listener de texto plano)
+      - "15671:15671" # UI de management sobre TLS
+      - "15692:15692" # métricas Prometheus, HTTP plano (listener aparte)
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 10s
+      timeout: 10s
+      retries: 12
+      # RabbitMQ tarda bastante en el primer arranque (crea el esquema Mnesia).
+      start_period: 40s
+
+  # ==========================================================================
+  # Blockchain (Pilar 2 / P5)
+  # ==========================================================================
+  nct:
+    build:
+      context: ./Pilar2/P5
+      dockerfile: Dockerfile.api
+    restart: unless-stopped
+    depends_on:
+      redis:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+    environment:
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://alloy:4317
+      OTEL_SERVICE_NAME: nct
+    ports:
+      - "8000:8000"
+    healthcheck:
+      # /healthz es liveness pura: no toca Redis, así que responde apenas
+      # levanta uvicorn.
+      test:
+        - CMD-SHELL
+        - python3 -c "import urllib.request; urllib.request.urlopen('http://localhost:8000/healthz')"
+      interval: 5s
+      timeout: 5s
+      retries: 12
+      start_period: 10s
+
+  # Sin worker GPU corriendo, el TrP no ve `heartbeat:gpu-server` en Redis y
+  # activa el fallback a CPU: baja la dificultad a "0" y trata de escalar el
+  # deployment worker-cpu por la API de Kubernetes. Ese último paso falla —
+  # localmente no hay API server — y vas a ver en los logs:
+  #
+  #   ERROR ... Error escalando worker-cpu: [Errno 2] No such file or directory
+  #
+  # Es esperado y NO rompe nada: scale_cpu_workers() tiene catch-all y el
+  # worker-cpu de acá abajo ya está levantado por compose. El efecto neto es
+  # el ideal para una demo: mina con CPU y con dificultad mínima, o sea rápido.
+  trp:
+    build:
+      context: ./Pilar2/P5
+      dockerfile: Dockerfile.trp
+    restart: unless-stopped
+    depends_on:
+      redis:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+    environment:
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      METRICS_PORT: 9000
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://alloy:4317
+      OTEL_SERVICE_NAME: trp
+
+  worker-cpu:
+    build:
+      context: ./Pilar2/P5
+      dockerfile: Dockerfile.cpu
+    restart: unless-stopped
+    depends_on:
+      redis:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+    environment:
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      METRICS_PORT: 9000
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://alloy:4317
+      OTEL_SERVICE_NAME: worker-cpu
+
+  # ==========================================================================
+  # App web
+  # ==========================================================================
+  app:
+    build:
+      context: ./app
+      dockerfile: Dockerfile
+      args:
+        # NEXT_PUBLIC_* se inlinean en build time, por eso van acá y no en environment.
+        NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME: ${NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME:-}
+        NEXT_PUBLIC_CLOUDINARY_UPLOAD_PRESET: ${NEXT_PUBLIC_CLOUDINARY_UPLOAD_PRESET:-}
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      nct:
+        condition: service_healthy
+      alloy:
+        condition: service_started
+    environment:
+      DATABASE_URL: postgres://entradas:entradas@postgres:5432/entradas
+      SESSION_PASSWORD: ${SESSION_PASSWORD:-dev-only-change-me-please-this-must-be-at-least-32-characters-long}
+      # Acá la app habla con la blockchain REAL, no con el mock — que era todo
+      # lo que podía hacer el compose anterior, el de app/. Poné NCT_URL=mock si
+      # querés volver al comportamiento simulado sin bajar el resto del stack.
+      NCT_URL: ${NCT_URL:-http://nct:8000}
+      NCT_MOCK_DELAY_MIN_MS: ${NCT_MOCK_DELAY_MIN_MS:-1500}
+      NCT_MOCK_DELAY_MAX_MS: ${NCT_MOCK_DELAY_MAX_MS:-4500}
+      NCT_MOCK_FAILURE_RATE: ${NCT_MOCK_FAILURE_RATE:-0}
+      # Sin token, isMpConfigured() da false y los pagos van por el camino mock.
+      MP_ACCESS_TOKEN: ${MP_ACCESS_TOKEN:-}
+      MP_PUBLIC_URL: ${MP_PUBLIC_URL:-http://localhost:3000}
+      NODE_ENV: production
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://alloy:4318
+      OTEL_SERVICE_NAME: frontend
+    ports:
+      - "3000:3000"
+
+  # ==========================================================================
+  # Observabilidad
+  # ==========================================================================
+  prometheus:
+    image: prom/prometheus:v2.54.1
+    restart: unless-stopped
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+    volumes:
+      - ./observability/local/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+    ports:
+      - "9090:9090"
+
+  loki:
+    image: grafana/loki:3.2.1
+    restart: unless-stopped
+    command: -config.file=/etc/loki/loki.yaml
+    volumes:
+      - ./observability/local/loki.yaml:/etc/loki/loki.yaml:ro
+
+  tempo:
+    image: grafana/tempo:2.6.1
+    restart: unless-stopped
+    command: -config.file=/etc/tempo/tempo.yaml
+    volumes:
+      - ./observability/local/tempo.yaml:/etc/tempo/tempo.yaml:ro
+
+  alloy:
+    image: grafana/alloy:v1.4.2
+    restart: unless-stopped
+    command:
+      - run
+      - /etc/alloy/config.alloy
+      - --server.http.listen-addr=0.0.0.0:12345
+    volumes:
+      - ./observability/local/config.alloy:/etc/alloy/config.alloy:ro
+      # Para descubrir y leer los logs de los contenedores. El discovery es
+      # automático, así que los servicios de blockchain aparecen en Loki solos.
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    depends_on:
+      - loki
+      - tempo
+
+  grafana:
+    image: grafana/grafana:11.2.2
+    restart: unless-stopped
+    environment:
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: admin
+      GF_USERS_ALLOW_SIGN_UP: "false"
+    volumes:
+      - ./observability/local/grafana-datasources.yaml:/etc/grafana/provisioning/datasources/datasources.yaml:ro
+    ports:
+      - "3001:3000"
+    depends_on:
+      - prometheus
+      - loki
+      - tempo
+
+volumes:
+  postgres_data:
+  redis_data:
+  rabbitmq_tls:

@@ -150,15 +150,27 @@ Todas documentadas en [`docs/adr/`](docs/adr/). Las más importantes:
 
 ## Cómo correr
 
+El compose vive en la **raíz del repo**, no acá: levanta la app junto con la blockchain
+y el resto del sistema. Todos los comandos siguientes se corren desde la raíz salvo
+donde se aclara.
+
 ```bash
-# Dev (solo app + Postgres)
+# Stack completo (app + blockchain + observabilidad)
+docker compose up --build
+
+# Dev con hot reload: dependencias en Docker, la app en local
+docker compose up -d postgres nct trp worker-cpu redis rabbitmq
+cd app && npm install && npm run dev
+
+# Solo la app contra el NCT simulado, sin blockchain
 docker compose up -d postgres
-npm install
-npm run dev
+cd app && NCT_URL=mock npm run dev
+```
 
-# Producción (Docker)
-docker compose up
+Tests (desde `app/`, con el stack levantado):
 
-# Tests
-npm test
+```bash
+npm run test:e2e                       # Playwright end-to-end
+node scripts/test-ecdsa-roundtrip.mjs  # firma ECDSA, no necesita server
+node scripts/smoke-e2e.mjs             # flujo completo contra localhost:3000
 ```

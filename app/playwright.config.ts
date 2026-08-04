@@ -4,13 +4,14 @@ import { defineConfig, devices } from "@playwright/test";
 // Asumimos que la app está corriendo (no levantamos webServer acá para
 // evitar conflictos con el container).
 //
-// Uso:
-//   docker compose up -d
+// Uso (el compose vive en la raíz del repo, un nivel arriba de acá):
+//   docker compose up -d --build
 //   npm run test:e2e
 //
 // Cada test usa emails random tipo `test-{uuid}@e2e.test` para no chocar
 // con datos de dev. La DB no se limpia entre tests — la basura queda.
-// Para limpiar, hacer `docker compose down -v` (borra el volumen de postgres).
+// Para limpiar, `docker compose down -v` desde la raíz (borra los volúmenes de
+// postgres y redis, o sea también la blockchain).
 
 export default defineConfig({
   testDir: "./tests/e2e",

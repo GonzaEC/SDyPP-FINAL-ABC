@@ -99,8 +99,18 @@ La versión que corre en producción. Agrega:
 
 ## Cómo correr (Docker Compose)
 
+Desde la **raíz del repo**:
+
 ```bash
-docker compose up
+docker compose up --build
 ```
 
-Esto levanta: NCT, TrP, Redis, RabbitMQ, worker-cpu. Para GPU se necesita `nvidia-docker`.
+Esto levanta NCT, TrP, worker-cpu, Redis y RabbitMQ junto con la app web y la
+observabilidad. Para levantar solo la blockchain:
+
+```bash
+docker compose up --build redis rabbitmq nct trp worker-cpu
+```
+
+El worker GPU no corre localmente: necesita CUDA y una placa NVIDIA. Sin él, el TrP
+entra en fallback a CPU automáticamente, que es el modo esperado en local.

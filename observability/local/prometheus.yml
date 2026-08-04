@@ -1,6 +1,8 @@
-# Prometheus para el entorno local (docker-compose). Scrapea el frontend en
-# su /api/metrics. Si se levanta el stack de blockchain local, agregar más
-# targets acá.
+# Prometheus para el entorno local (docker-compose de la raíz). Scrapea el
+# frontend, los tres servicios de la blockchain y el propio RabbitMQ.
+#
+# Los nombres de host son los de los servicios en docker-compose.yml. El worker
+# GPU no está: no corre localmente (ver el comentario de `trp` en el compose).
 global:
   scrape_interval: 15s
 
@@ -15,3 +17,33 @@ scrape_configs:
       - targets: ["app:3000"]
         labels:
           app: frontend
+
+  # El NCT monta /metrics en su mismo puerto de API (8000).
+  - job_name: nct
+    static_configs:
+      - targets: ["nct:8000"]
+        labels:
+          app: nct
+
+  # TrP y workers no son servidores HTTP: observability.py les abre un endpoint
+  # dedicado de métricas en METRICS_PORT (9000 por defecto).
+  - job_name: trp
+    static_configs:
+      - targets: ["trp:9000"]
+        labels:
+          app: trp
+
+  - job_name: worker-cpu
+    static_configs:
+      - targets: ["worker-cpu:9000"]
+        labels:
+          app: worker-cpu
+          worker_type: cpu
+
+  # Plugin rabbitmq_prometheus. Va por HTTP plano en 15692 aunque el AMQP sea
+  # TLS-only: es un listener independiente de `listeners.tcp = none`.
+  - job_name: rabbitmq
+    static_configs:
+      - targets: ["rabbitmq:15692"]
+        labels:
+          app: rabbitmq

@@ -104,10 +104,25 @@ Todos los servicios usan [observability.py](observability.py):
 
 ## Cómo correr
 
-**Local (stack completo + observabilidad):** desde [`app/`](../../app/):
+**Local (stack completo + observabilidad):** desde la raíz del repo:
 ```bash
-docker compose up
+docker compose up --build
 ```
+
+Solo la blockchain, sin la app web:
+```bash
+docker compose up --build redis rabbitmq nct trp worker-cpu
+```
+
+Dos cosas a tener en cuenta en local:
+
+- **No hay worker GPU** (necesita CUDA). Al no llegar `heartbeat:gpu-server`, el TrP
+  activa el fallback: baja la dificultad a `"0"` y mina el worker CPU. Es el
+  comportamiento buscado — el minado es rápido y no hace falta placa.
+- El TrP loguea `Error escalando worker-cpu: [Errno 2] No such file or directory`
+  porque intenta escalar el deployment vía la API de Kubernetes, que no existe fuera
+  del cluster. `scale_cpu_workers()` lo captura y sigue; el worker-cpu ya está
+  levantado por compose.
 
 **GKE:** las imágenes las construye y despliega Pipeline 3
 ([.github/workflows/pipeline-3-apps.yml](../../.github/workflows/pipeline-3-apps.yml)); los

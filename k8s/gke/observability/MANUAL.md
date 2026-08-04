@@ -267,12 +267,18 @@ Para agregar más, ver §12.
 
 ## 9. Entorno local
 
-Sin cluster, todo en docker-compose (desde `app/`):
+Sin cluster, todo en docker-compose (desde la **raíz del repo**):
 
 ```bash
-docker compose up
+docker compose up --build
 ```
-Levanta app + Postgres + Prometheus + Grafana + Loki + Tempo + Alloy.
+Levanta app + blockchain (NCT, TrP, worker-cpu) + Postgres + Redis + RabbitMQ +
+Prometheus + Grafana + Loki + Tempo + Alloy.
+
+Prometheus scrapea los cinco targets locales (frontend, nct, trp, worker-cpu,
+rabbitmq); Alloy descubre los contenedores por el socket de Docker, así que los logs
+de todos los servicios llegan a Loki sin configuración extra. El worker GPU no está:
+no corre fuera del cluster del profesor.
 
 - App: http://localhost:3000
 - Grafana: http://localhost:3001 (admin/admin) — datasources ya provisionados
