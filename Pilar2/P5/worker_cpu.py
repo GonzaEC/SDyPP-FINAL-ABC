@@ -115,6 +115,12 @@ def mine_cpu(data: str, difficulty: str, start: int, end: int):
     # al terminar: incrementar el counter de prometheus dentro del bucle (que
     # puede correr millones de iteraciones por chunk) tiene costo de lock por
     # llamada y ralentiza el minado.
+    # El contador va en un `finally` y no en un `except`: asi se registra en las
+    # tres salidas posibles (solucion encontrada, rango agotado, o excepcion)
+    # SIN tragarse el error. Con `except Exception: pass` una falla real de
+    # minado se devolvia como (None, None) — es decir, indistinguible de "no
+    # habia solucion en este rango" — y el callback ackeaba la tarea como
+    # completada, sin nack, sin reintento y sin dejar rastro en ningun lado.
     hashes = 0
     try:
         for nonce in range(start, end + 1):
@@ -122,12 +128,10 @@ def mine_cpu(data: str, difficulty: str, start: int, end: int):
             h = hashlib.md5(text.encode()).hexdigest()
             hashes += 1
             if h.startswith(difficulty):
-                WORKER_HASHES.labels(worker_type=WORKER_TYPE).inc(hashes)
                 return nonce, h
-    except Exception:
-        pass
-    WORKER_HASHES.labels(worker_type=WORKER_TYPE).inc(hashes)
-    return None, None
+        return None, None
+    finally:
+        WORKER_HASHES.labels(worker_type=WORKER_TYPE).inc(hashes)
 
 # Cuando RabbitMQ entrega un mensaje de la cola tareas, llama a esta función.
 # El mensaje contiene:

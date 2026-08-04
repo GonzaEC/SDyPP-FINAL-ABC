@@ -163,6 +163,15 @@ def _install_fake_pika_module():
         def basic_nack(self, *a, **k):
             return None
 
+        # worker_cpu.py y worker.py terminan su top-level registrando el
+        # consumer y bloqueando en start_consuming(). Como no-ops, el modulo
+        # se puede importar en un test y volver, en vez de quedarse colgado.
+        def basic_consume(self, *a, **k):
+            return None
+
+        def start_consuming(self, *a, **k):
+            return None
+
     class _Connection:
         def __init__(self, *a, **k):
             pass
@@ -198,6 +207,17 @@ def _fakes_installed():
 def redis_client(_fakes_installed):
     """Nueva instancia de FakeRedis por test, para aislar el estado."""
     return FakeRedis()
+
+
+@pytest.fixture()
+def worker_cpu(_fakes_installed):
+    """Importa worker_cpu.py con los fakes instalados.
+
+    Import plano (no `Pilar2.P5.worker_cpu`) porque lo que esta en sys.path es
+    _P5_DIR, insertado arriba. Mismo criterio que usan los tests de nct.
+    """
+    import worker_cpu as worker_module
+    return worker_module
 
 
 @pytest.fixture()
