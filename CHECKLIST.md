@@ -23,13 +23,13 @@ blockchain de la cátedra).
 | Sección | ✅ | 🟡 | ❌ | Estado |
 |---|---|---|---|---|
 | 1. Funciones de blockchain | 14 | 1 | 1 | Sólido: métricas listas; falta el modo competitivo |
-| 2. Plataforma escalable en K8s | 8 | 1 | 0 | Casi completo |
+| 2. Plataforma escalable en K8s | 9 | 0 | 0 | Completo |
 | 3. Ambiente productivo real | 10 | 2 | 0 | Completo: StatefulSets migrados |
 | 4. Pruebas del sistema | 4 | 3 | 0 | Cubierta: 36 unit tests + matriz de carga corrida |
 | 5. Pipelines | 5 | 0 | 0 | Completo (1 ítem N/A) — filtro de Pipeline 4 arreglado |
 | 6. Repositorio y entrega | 5 | 0 | 1 | Falta solo el video |
 | 7. Informe | 6 | 0 | 0 | Completa — `docs/INFORME.md` |
-| **Total** | **52** | **7** | **2** | |
+| **Total** | **53** | **6** | **2** | |
 
 Quedan **2 faltantes**: el modo competitivo del pool (§1) y el video explicativo (§6).
 Los dos se pueden escribir sin nube; solo su verificación necesita cluster.
@@ -90,7 +90,7 @@ Los dos se pueden escribir sin nube; solo su verificación necesita cluster.
 | Plataforma de logging (N servicios, M réplicas) | ✅ | Alloy como DaemonSet → Loki |
 | Monitoreo (alertas, dashboards) | ✅ | Prometheus + Grafana + `alerts.yaml` |
 | **Sincronización de relojes con NTP** | ✅ | Nodos GKE (COS) sincronizan por `systemd-timesyncd` contra el NTP de Google. Monitoreo de drift vía `node_timex_offset_seconds` (collector `timex` de node-exporter). Documentado en `k8s/gke/observability/README.md` |
-| Endpoint público de estado por servicio | 🟡 | La app expone `/api/health` y `/api/status` por el Ingress, pero el NCT es ClusterIP: su `/status` **no es accesible desde Internet**. Falta un JSON agregado con el estado de cada servicio |
+| Endpoint público de estado por servicio | ✅ | La app expone `/api/status` (Ingress de `tesera.tech`) con un JSON agregado: `frontend`, `nct` (via `/status` del NCT), `postgres`, `redis` y `rabbitmq` (`app/src/app/api/status/route.ts`) |
 
 ---
 
@@ -266,8 +266,8 @@ Se pueden escribir y revisar sin cluster; quedan listos para el próximo desplie
 - [x] **NTP**: documentado. Los nodos GKE sincronizan por `systemd-timesyncd`
       (NTP de Google) y se monitorea el drift con `node_timex_offset_seconds` del
       collector `timex` de node-exporter → sección en `k8s/gke/observability/README.md`.
-- [ ] **Endpoint público de estado**: un `/api/status` en la app que agregue el estado de
-      cada servicio (NCT, Redis, RabbitMQ, Postgres) y lo devuelva como JSON por el Ingress.
+- [x] **Endpoint público de estado**: `/api/status` en la app agrega el estado de
+      cada servicio (NCT, Redis, RabbitMQ, Postgres) y lo devuelve como JSON por el Ingress.
 - [ ] **TLS para Redis** (y opcionalmente Postgres), para cerrar el ítem de canal seguro.
 
 ## Bloque 4 — Informe y entrega (§6, §7) — al final, porque depende del Bloque 2
