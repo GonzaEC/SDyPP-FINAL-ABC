@@ -183,10 +183,19 @@ real hoy.
 
 Sin esto no se puede medir nada, y §4 y §7 dependen enteramente de medir.
 
-- [ ] **Levantar y verificar el compose raíz.** Está escrito y valida sintácticamente, pero
-      nunca se ejecutó. Es el único entorno donde hoy corre el sistema completo.
-- [ ] Correr el flujo end-to-end: emitir entradas → ver los bloques minándose en
-      `localhost:8000/blockchain`.
+- [x] **Levantar y verificar el compose raíz.** ✅ **Verificado 2026-08-04**: el stack completo
+      levantó (`docker compose up --build`) con los 12 servicios healthy (Postgres, Redis,
+      RabbitMQ, NCT, TrP, worker-cpu, app, Prometheus, Grafana, Loki, Tempo, Alloy).
+- [x] Correr el flujo end-to-end: emitir entradas → ver los bloques minándose en
+      `localhost:8000/blockchain`. ✅ **Verificado**: `POST /tx/mint` (firma ECDSA P-256 real)
+      devolvió 202, la op quedó CONFIRMED en ~2s, la cadena pasó de 1 a 2 bloques y las
+      métricas se registraron (`worker_solutions_found_total{cpu} = 4`, `worker_tasks_processed_total{cpu} = 4`).
+
+> **Hallazgo:** en este clone `app/docker/entrypoint.sh` estaba con CRLF (checkout anterior al
+> `.gitattributes`), lo que tiraba la app con `exec ./entrypoint.sh: no such file or directory`.
+> El blob en git ya está en LF, así que un clone fresco no tiene el problema. También se
+> observó un falso negativo del healthcheck de RabbitMQ en el primer arranque (race con el
+> `start_period`), resuelto con un segundo `docker compose up -d`.
 
 ## Bloque 1 — Barato, alto impacto, sin nube (1-2 días)
 
