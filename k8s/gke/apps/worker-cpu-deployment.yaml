@@ -16,10 +16,28 @@ spec:
         prometheus.io/scrape: "true"
         prometheus.io/port: "9000"
     spec:
+      # Endurecimiento del pod (checklist §3): sin root y con el perfil
+      # seccomp por defecto del runtime.
+      # La imagen python:3.12 corre como root si no se fuerza.
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        seccompProfile:
+          type: RuntimeDefault
       nodeSelector:
         pool: apps
       containers:
         - name: worker-cpu
+          # Ningun servicio necesita capabilities del kernel ni escalar
+          # privilegios. readOnlyRootFilesystem queda fuera a proposito: los
+          # servicios de Python escriben __pycache__ y Postgres/RabbitMQ usan
+          # rutas de trabajo dentro del contenedor.
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
           image: IMAGE_TAG
           ports:
             - name: metrics

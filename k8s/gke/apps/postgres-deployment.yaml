@@ -15,10 +15,29 @@ spec:
       labels:
         app: postgres
     spec:
+      # Endurecimiento del pod (checklist §3): sin root y con el perfil
+      # seccomp por defecto del runtime.
+      # postgres:17-alpine usa el uid 70. fsGroup para que el PVC quede accesible.
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 70
+        runAsGroup: 70
+        fsGroup: 70
+        seccompProfile:
+          type: RuntimeDefault
       nodeSelector:
         pool: apps
       containers:
         - name: postgres
+          # Ningun servicio necesita capabilities del kernel ni escalar
+          # privilegios. readOnlyRootFilesystem queda fuera a proposito: los
+          # servicios de Python escriben __pycache__ y Postgres/RabbitMQ usan
+          # rutas de trabajo dentro del contenedor.
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
           image: postgres:17-alpine
           ports:
             - containerPort: 5432

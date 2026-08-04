@@ -18,10 +18,28 @@ spec:
         prometheus.io/port: "3000"
         prometheus.io/path: "/api/metrics"
     spec:
+      # Endurecimiento del pod (checklist §3): sin root y con el perfil
+      # seccomp por defecto del runtime.
+      # El Dockerfile ya crea y usa el usuario nextjs (1001).
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1001
+        runAsGroup: 1001
+        seccompProfile:
+          type: RuntimeDefault
       nodeSelector:
         pool: apps
       containers:
         - name: frontend
+          # Ningun servicio necesita capabilities del kernel ni escalar
+          # privilegios. readOnlyRootFilesystem queda fuera a proposito: los
+          # servicios de Python escriben __pycache__ y Postgres/RabbitMQ usan
+          # rutas de trabajo dentro del contenedor.
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
           image: IMAGE_TAG
           ports:
             - containerPort: 3000

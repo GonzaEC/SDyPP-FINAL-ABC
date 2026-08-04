@@ -19,10 +19,29 @@ spec:
         prometheus.io/scrape: "true"
         prometheus.io/port: "15692"
     spec:
+      # Endurecimiento del pod (checklist §3): sin root y con el perfil
+      # seccomp por defecto del runtime.
+      # La imagen rabbitmq usa el uid 999. fsGroup para leer los certs TLS montados.
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 999
+        runAsGroup: 999
+        fsGroup: 999
+        seccompProfile:
+          type: RuntimeDefault
       nodeSelector:
         pool: infra
       containers:
         - name: rabbitmq
+          # Ningun servicio necesita capabilities del kernel ni escalar
+          # privilegios. readOnlyRootFilesystem queda fuera a proposito: los
+          # servicios de Python escriben __pycache__ y Postgres/RabbitMQ usan
+          # rutas de trabajo dentro del contenedor.
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
           image: rabbitmq:3-management
           ports:
             - containerPort: 5671
