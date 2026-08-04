@@ -4,7 +4,7 @@ import { getPaymentInfo, refundPayment } from "@/lib/payments/mercadopago";
 import { submitTransfer } from "@/lib/nct/client";
 import { metrics } from "@/lib/observability/metrics";
 
-function classifyTransferError(err: unknown): "terminal" | "retryable" {
+export function classifyTransferError(err: unknown): "terminal" | "retryable" {
   const message = err instanceof Error ? err.message : String(err);
 
   if (

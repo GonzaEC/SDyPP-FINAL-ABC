@@ -169,6 +169,8 @@ services:
       METRICS_PORT: 9000
       OTEL_EXPORTER_OTLP_ENDPOINT: http://alloy:4317
       OTEL_SERVICE_NAME: trp
+      TRP_TOTAL_RANGE: ${TRP_TOTAL_RANGE:-10000000}
+      TRP_CHUNK_SIZE: ${TRP_CHUNK_SIZE:-2500000}
 
   worker-cpu:
     build:

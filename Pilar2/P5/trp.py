@@ -1,3 +1,4 @@
+import os
 import pika
 import json
 import time
@@ -229,8 +230,11 @@ threading.Thread(target=monitor_loop, daemon=True).start()
 # SUBDIVISION DE TAREAS
 # -------------------------
 
-TOTAL       = 10_000_000
-CHUNK_SIZE  = 2_500_000   # cada sub-tarea cubre este rango
+TOTAL       = int(os.getenv("TRP_TOTAL_RANGE", "10000000"))
+# Tamaño del chunk en nonces. Parametrizable para barrer la fragmentación del
+# pool (cuanto más chico el chunk, más se fragmenta la tarea y más se reparte
+# entre workers).
+CHUNK_SIZE  = int(os.getenv("TRP_CHUNK_SIZE", "2500000"))
 
 
 # Recibe una tarea del NCT con start/end opcionales,

@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
+import type { Prisma } from "@/generated/prisma/client";
 import { settleDueOperations } from "@/lib/nct/client";
 import { getDisplayName } from "@/lib/display-name";
 
@@ -20,11 +21,18 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
     orderBy: { price: "asc" },
   });
 
+  type ListingWithTicket = Prisma.TicketListingGetPayload<{
+    include: {
+      ticket: { select: { id: true; ticketNumber: true; ownerPublicKey: true } };
+      seller: { select: { id: true; email: true; displayName: true; publicKey: true } };
+    };
+  }>;
+
   // Filtrar los stale: si el dueño on-chain no es el seller, el listing es inválido.
-  const valid = listings.filter((l) => l.ticket.ownerPublicKey === l.seller.publicKey);
+  const valid = listings.filter((l: ListingWithTicket) => l.ticket.ownerPublicKey === l.seller.publicKey);
 
   return NextResponse.json({
-    listings: valid.map((l) => ({
+    listings: valid.map((l: ListingWithTicket) => ({
       id: l.id,
       ticketNumber: l.ticket.ticketNumber,
       price: l.price,

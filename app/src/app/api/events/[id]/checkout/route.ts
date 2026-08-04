@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
+import type { Prisma } from "@/generated/prisma/client";
 import { settleDueOperations } from "@/lib/nct/client";
 import { getSession } from "@/lib/session";
 import { isMpConfigured, createPreference } from "@/lib/payments/mercadopago";
@@ -67,7 +68,8 @@ export async function POST(_req: Request, { params }: { params: Promise<{ id: st
   // NO llega a pagar. Sin esto, ambas reservaban el mismo ticket (race TOCTOU).
   const reserveTicket = () =>
     prisma.$transaction(async (tx) => {
-      const activeReservations = await tx.payment.findMany({
+      const txClient = tx as Prisma.TransactionClient;
+      const activeReservations = await txClient.payment.findMany({
         where: {
           eventId,
           listingId: null,
@@ -81,7 +83,7 @@ export async function POST(_req: Request, { params }: { params: Promise<{ id: st
         .map((row) => row.ticketId)
         .filter((ticketId): ticketId is string => Boolean(ticketId));
 
-      const ticket = await tx.ticket.findFirst({
+      const ticket = await txClient.ticket.findFirst({
         where: {
           eventId,
           ownerPublicKey: event.organizer.publicKey,
@@ -92,7 +94,7 @@ export async function POST(_req: Request, { params }: { params: Promise<{ id: st
       });
       if (!ticket) return null;
 
-      const payment = await tx.payment.create({
+      const payment = await txClient.payment.create({
         data: {
           userId: buyerUserId,
           eventId,

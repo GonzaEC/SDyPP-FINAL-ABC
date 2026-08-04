@@ -24,7 +24,7 @@ export async function GET() {
       organizerId: true,
     },
   });
-  const eventById = new Map(events.map((e) => [e.id, e]));
+  const eventById = new Map(events.map((e: (typeof events)[number]) => [e.id, e]));
 
   const tickets = ownership.map((o) => ({
     ticketId: o.ticketId,

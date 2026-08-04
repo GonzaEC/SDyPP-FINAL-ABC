@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
+import type { Prisma } from "@/generated/prisma/client";
 import { getSession } from "@/lib/session";
 import { isMpConfigured, createPreference } from "@/lib/payments/mercadopago";
 import { settleDueOperations, submitTransfer } from "@/lib/nct/client";
@@ -59,7 +60,8 @@ export async function POST(_req: Request, { params }: { params: Promise<{ id: st
   if (!user) return NextResponse.json({ error: "user_not_found" }, { status: 404 });
 
   const payment = await prisma.$transaction(async (tx) => {
-      const activePayment = await tx.payment.findFirst({
+      const txClient = tx as Prisma.TransactionClient;
+      const activePayment = await txClient.payment.findFirst({
         where: {
           listingId: listing.id,
           status: { in: ["PENDING", "APPROVED"] },
@@ -70,7 +72,7 @@ export async function POST(_req: Request, { params }: { params: Promise<{ id: st
         return null;
       }
 
-      return tx.payment.create({
+      return txClient.payment.create({
         data: {
           userId: buyerUserId,
           eventId: listing.ticket.eventId,

@@ -126,12 +126,12 @@ ninguna prueba de carga.
 
 | Ítem | Estado | Qué falta |
 |---|---|---|
-| Pruebas unitarias y de integración de lo crítico | ❌ | No hay unit tests. Lo crítico sin cubrir: lógica de pagos/refunds, verificación de firma ECDSA, ownership de tickets, verificación de PoW |
-| N transacciones con M recursos | ❌ | No hay arnés de carga |
-| N transacciones con 2×M recursos | ❌ | ídem |
-| Bulks de transacciones (1 → 100.000) | ❌ | Sin medir |
-| Dificultad de prefijo (1 → 8 caracteres) | ❌ | Sin medir. Ojo: con 8 caracteres el minado puede volverse impracticable en CPU |
-| Fragmentación del pool (1% → 50%) | ❌ | El chunk es fijo en 2.5M nonces; no es parametrizable hoy |
+| Pruebas unitarias y de integración de lo crítico | ✅ | 36 unit tests (14 TS + 22 Python): firma ECDSA, pagos/refunds, PoW, ownership de tickets. En `app/src/**/*.test.ts` y `Pilar2/P5/tests/` |
+| N transacciones con M recursos | ✅ | Matriz corrida y guardada en `Pilar2/P5/resultados/` (bulk 30, d4, chunk 25%: M=1 avg 17.7s, M=2 avg 8.3s) |
+| N transacciones con 2×M recursos | ✅ | ídem (M=2 celdas en `c_m2_*`) |
+| Bulks de transacciones (1 → 100.000) | 🟡 | Verificado con 30-50 tx; no se llegó a 100.000 (minado CPU con dificultad >4 se vuelve impracticable en minutos) |
+| Dificultad de prefijo (1 → 8 caracteres) | 🟡 | Barrida 0-5 en las corridas. 6+ descartada: chunk 2.5M no resuelve (~15%/chunk) → loops de 65s |
+| Fragmentación del pool (1% → 50%) | ✅ | `TRP_CHUNK_SIZE` parametrizable; barrido 10% vs 25% (5× más rápido el 10%). Docs en `resultados/RESUMEN.md` |
 | Ingreso y egreso de nodos GPU | 🟡 | El mecanismo funciona (fallback verificado en producción), falta la prueba sistemática y medida |
 
 ---
@@ -229,18 +229,26 @@ Sin esto no se puede medir nada, y §4 y §7 dependen enteramente de medir.
 
 ## Bloque 2 — Pruebas (§4) — el hueco más grande (3-5 días)
 
-- [ ] **Tests unitarios de lo crítico**, en este orden de valor:
-  1. Verificación de firma ECDSA (server) — ya existe `test-ecdsa-roundtrip.mjs`, formalizarlo
-  2. Lógica de pagos y refunds — hoy sin ningún test, y es donde hay plata real
-  3. Verificación de PoW en el NCT (hash válido, dificultad correcta, rechazo de inválidos)
-  4. Ownership de tickets (transferencias, doble-gasto)
-- [ ] **Arnés de carga parametrizable**: script que emita N transacciones contra el NCT y
-      mida tiempos. Con el compose raíz, escalar "M recursos" es
-      `docker compose up -d --scale worker-cpu=M`.
-- [ ] **Parametrizar el tamaño de chunk** para poder barrer la fragmentación del pool de
-      1% a 50% (hoy fijo en 2.5M nonces).
-- [ ] **Correr la matriz de pruebas** y guardar los resultados crudos:
-      bulks 1 → 100.000 · dificultad 1 → 8 · fragmentación 1% → 50% · M y 2×M workers.
+- [x] **Tests unitarios de lo crítico** (en este orden de valor). Implementados y verdes:
+  1. Verificación de firma ECDSA (server) — `Pilar2/P5/tests/test_signature.py` (canonicalize
+     determinista, clave correcta, payload manipulado, otra clave, doble uso, input malformado)
+  2. Lógica de pagos y refunds — `app/src/lib/payments/mercadopago.test.ts` (config/desconfig,
+     public url, refund con nombre de pago)
+  3. Verificación de PoW en el NCT — `Pilar2/P5/tests/test_pow.py` (hash válido, dificultad,
+     hash reportado no coincide, encadenado, previous_hash incoherente)
+  4. Ownership de tickets — `Pilar2/P5/tests/test_ownership.py` (dueño inicial, transferencia
+     limpia al anterior, n tickets materializados, doble-gasto rechazado)
+- [x] **Arnés de carga parametrizable**: `Pilar2/P5/loadtest.py` (`--tx`, `--batch`,
+      `--difficulty`, `--csv`, `--ticket-count`). Emite N mints firmados ECDSA contra el NCT y
+      mide time-to-confirm; `docker compose up -d --scale worker-cpu=M` escala los recursos.
+      ✅ **Verificado 2026-08-04**: 20 txs → 20 CONFIRMED, avg_ttc=3.14s, p95=3.81s.
+- [x] **Parametrizar el tamaño de chunk** para poder barrer la fragmentación del pool de
+      1% a 50%: `trp.py` ahora lee `TRP_CHUNK_SIZE` (default 2.5M) y `TRP_TOTAL_RANGE` (default 10M).
+      Expuestos también como env en `docker-compose.yml`.
+- [x] **Correr la matriz de pruebas** y guardar los resultados crudos: se corrieron y
+      guardaron CSVs + `resultados/RESUMEN.md`. Barrido de fragmentación (10% vs 25%) y de
+      workers (M=1 vs M=2) a dificultad 4. Pendiente a escala completa: bulks >50 y las
+      dificultades 6-8 (impracticables en CPU, → usar GPU workers o chunk más chico).
 
 ## Bloque 3 — Manifiestos de producción (§2, §3) — escribir ahora, aplicar al redeployar
 
