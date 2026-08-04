@@ -97,14 +97,14 @@ Los dos se pueden escribir sin nube; solo su verificación necesita cluster.
 ## 3. Configuraciones para ambiente productivo real
 
 Era la sección más débil. Con el Cluster Autoscaler, los HPA, el `securityContext` y la
-migración de Postgres, Redis y RabbitMQ a `StatefulSet` (todo el 2026-08-04), queda sin
-workloads por pasar a `StatefulSet`.
+migración de Postgres, Redis y RabbitMQ a `StatefulSet` (todo el 2026-08-04), la sección
+quedó sin faltantes.
 
 | Ítem | Estado | Evidencia / qué falta |
 |---|---|---|
 | Autoscaler por uso de CPU (Cluster Autoscaler / Karpenter) | ✅ | `infra/gke.tf`: bloque `autoscaling` en los pools `apps` (2-5) e `infra` (1-2). `monitoring` queda fijo a propósito |
 | HPA por métricas comunes o específicas | ✅ | `k8s/gke/apps/hpa.yaml`: frontend (2-6) y NCT (2-4) por CPU al 70%. worker-cpu queda fuera a propósito: su ciclo de vida lo maneja el TrP |
-| Servicios como StatefulSet para escalar con PVC | ❌ | Postgres, Redis y RabbitMQ migrados a `StatefulSet` con `volumeClaimTemplates` |
+| Servicios como StatefulSet para escalar con PVC | ✅ | Postgres, Redis y RabbitMQ migrados a `StatefulSet` con `volumeClaimTemplates`; se borraron los PVC estáticos |
 | Limitación de recursos | ✅ | Los 7 workloads tienen `resources:` |
 | `securityContext` (no root, mínimo necesario) | ✅ | Los 7 workloads con `runAsNonRoot`, uid explícito, `seccompProfile` y `drop: [ALL]`. Pendiente menor: alertmanager, grafana y los 3 exporters de observabilidad |
 | tolerations / affinity / nodeSelector | 🟡 | `nodeSelector` en los 7 workloads (separa `pool=infra` de `pool=apps`), pero `tolerations`/`affinity` solo en observabilidad |
@@ -252,15 +252,20 @@ Sin esto no se puede medir nada, y §4 y §7 dependen enteramente de medir.
       workers (M=1 vs M=2) a dificultad 4. Pendiente a escala completa: bulks >50 y las
       dificultades 6-8 (impracticables en CPU, → usar GPU workers o chunk más chico).
 
-## Bloque 3 — Manifiestos de producción (§2, §3) — escribir ahora, aplicar al redeployar
+## Bloque 3 — Manifiestos de producción (§2, §3) — parcialmente hecho
 
 Se pueden escribir y revisar sin cluster; quedan listos para el próximo despliegue.
 
-- [ ] **`securityContext` en los 7 workloads** (`runAsNonRoot`, `readOnlyRootFilesystem`
-      donde se pueda, drop de capabilities). Es el ítem más barato de los que faltan.
-- [ ] **Cluster Autoscaler**: bloque `autoscaling { min_node_count / max_node_count }` en
-      los node pools de `infra/gke.tf`.
-- [ ] **HPA** para `worker-cpu` (por CPU) y para `frontend` (por CPU o por requests).
+- [x] **`securityContext` en los 7 workloads.** `runAsNonRoot`, uid derivado de lo que
+      espera cada imagen (nextjs 1001, python 1000, postgres 70, redis/rabbitmq 999),
+      `seccompProfile: RuntimeDefault` y `drop: [ALL]`. `readOnlyRootFilesystem` quedó
+      fuera a propósito: Python escribe `__pycache__` y Postgres/RabbitMQ usan rutas de
+      trabajo internas.
+- [x] **Cluster Autoscaler** en `infra/gke.tf`: pools `apps` (2-5) e `infra` (1-2).
+      `monitoring` queda fijo — singletons y único pool on-demand.
+- [x] **HPA** en `k8s/gke/apps/hpa.yaml` para `frontend` (2-6) y `blockchain-nct` (2-4).
+      **El `worker-cpu` quedó deliberadamente fuera** (ver ADR-026): sus réplicas ya las
+      maneja el TrP y dos controladores sobre `spec.replicas` producirían flapping.
 - [x] **Migrar Postgres, Redis y RabbitMQ a StatefulSet** con `volumeClaimTemplates`;
       se borraron los PVC estáticos y los `*-deployment.yaml`.
 - [x] **NTP**: documentado. Los nodos GKE sincronizan por `systemd-timesyncd`
@@ -270,12 +275,11 @@ Se pueden escribir y revisar sin cluster; quedan listos para el próximo desplie
       cada servicio (NCT, Redis, RabbitMQ, Postgres) y lo devuelve como JSON por el Ingress.
 - [ ] **TLS para Redis** (y opcionalmente Postgres), para cerrar el ítem de canal seguro.
 
-## Bloque 4 — Informe y entrega (§6, §7) — al final, porque depende del Bloque 2
+## Bloque 4 — Informe y entrega (§6, §7) — solo falta el video
 
-- [ ] **Gráficos comparativos** a partir de los datos crudos del Bloque 2.
-- [ ] **Análisis del pool y su escalado** con las mediciones reales.
-- [ ] **Reflexión crítica**: limitaciones (single point of failure del NCT, dificultad fija,
-      chunk fijo), mejoras posibles, y en qué contexto real aplicaría esta arquitectura.
+- [x] **Gráficos comparativos**: `Pilar2/P5/graficos.py` genera 4 PNGs desde los CSVs.
+- [x] **Análisis del pool y su escalado** con las mediciones reales — `docs/INFORME.md` §3.
+- [x] **Reflexión crítica** — `docs/INFORME.md` §5.
 - [ ] **Video explicativo** recorriendo servicios, componentes y configuraciones.
 
 ---
