@@ -22,14 +22,14 @@ blockchain de la cátedra).
 
 | Sección | ✅ | 🟡 | ❌ | Estado |
 |---|---|---|---|---|
-| 1. Funciones de blockchain | 14 | 1 | 1 | Sólido: métricas listas; falta el modo competitivo |
+| 1. Funciones de blockchain | 15 | 0 | 1 | Sólido: manejo de fallas probado; falta el modo competitivo |
 | 2. Plataforma escalable en K8s | 9 | 0 | 0 | Completo |
 | 3. Ambiente productivo real | 10 | 2 | 0 | Completo: StatefulSets migrados |
 | 4. Pruebas del sistema | 4 | 3 | 0 | Cubierta: 36 unit tests + matriz de carga corrida |
 | 5. Pipelines | 5 | 0 | 0 | Completo (1 ítem N/A) — filtro de Pipeline 4 arreglado |
 | 6. Repositorio y entrega | 5 | 0 | 1 | Falta solo el video |
 | 7. Informe | 6 | 0 | 0 | Completa — `docs/INFORME.md` |
-| **Total** | **53** | **6** | **2** | |
+| **Total** | **54** | **5** | **2** | |
 
 Quedan **2 faltantes**: el modo competitivo del pool (§1) y el video explicativo (§6).
 Los dos se pueden escribir sin nube; solo su verificación necesita cluster.
@@ -48,7 +48,7 @@ Los dos se pueden escribir sin nube; solo su verificación necesita cluster.
 | Worker GPU en funcionamiento | ✅ | `worker.py` + `gpu-server.py` + `brute_force_range.cu` |
 | Protocolo: competencia y/o coordinación | ✅ | `Pilar2/P5/README.md` ahora documenta el eje cooperativo (reparto de rangos disjuntos) vs competitivo y por qué se eligió el primero |
 | Detalle de arquitectura CUDA / versiones | ✅ | `Dockerfile.worker` compila `sm61`, `sm86` y `sm89`; Pilar 1 documenta el entorno (Colab T4) |
-| Manejo de fallas en workers | 🟡 | `basic_nack(requeue=True)` en el worker CPU + `MINING_TIMEOUT_SECONDS` en el NCT. Documentado en `Pilar2/P5/README.md`; falta probarlo sistemáticamente |
+| Manejo de fallas en workers | ✅ | `basic_nack(requeue=True)` en el worker CPU + `MINING_TIMEOUT_SECONDS` en el NCT. Documentado y **probado 2026-08-05**: kill del worker a mitad del minado → RabbitMQ requeueó los 4 chunks (`redeliver` 0→4) → worker reiniciado re-minó los mismos rangos → 10/10 ops CONFIRMED (ver `Pilar2/P5/README.md` "Prueba realizada") |
 | Keep-alive de mineros GPU hacia el pool | ✅ | Cola `heartbeat_gpu` → `heartbeat:gpu-server` con TTL en Redis |
 | Fallback ante ausencia de GPUs | ✅ | `activate_fallback()`: baja dificultad a `"0"` y escala worker-cpu vía API de K8s |
 

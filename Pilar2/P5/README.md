@@ -126,6 +126,38 @@ Combinados: la reentrega de RabbitMQ cubre la caída brusca, el reintento único
 transitorias, el timeout del NCT cubre el agotamiento de reintentos, y el heartbeat/fallback
 cubre la pérdida de capacidad de minado.
 
+### Prueba realizada (2026-08-05): kill del worker-cpu a mitad del minado
+
+Con el compose raíz arriba se emitieron 10 mints (bloque único con dificultad `00000`) y se
+mató el worker-cpu **mientras minaba**. La evidencia se tomó del API de management de
+RabbitMQ (cola `tareas`) y de los logs del worker:
+
+| Momento | `messages_ready` | `messages_unacknowledged` | `redeliver` | Qué pasó |
+|---|---|---|---|---|
+| Antes del mint | 0 | 0 | 0 | — |
+| Worker minando | 0 | **4** | 0 | El TrP subdividió el bloque en 4 chunks y el worker los tomó (unacked, sin ack) |
+| `docker compose kill worker-cpu` | — | — | — | SIGKILL a mitad del minado: el worker muere sin ackear |
+| ~2s después del kill | **4** | 0 | 0 | RabbitMQ requeueó los 4 chunks (`basic_ack` nunca llegó) |
+| Worker reiniciado | 0 | 0 | **4** | Los chunks se redelivered; el worker re-minó los **mismos rangos** (`[0-2499999]`, `[2500000-4999999]`, `[5000000-7499999]`, `[7500000-9999999]`) |
+| Resultado | — | — | — | **10/10 ops CONFIRMED**, cadena pasó de 27 → 28 bloques |
+
+Puntos a destacar del resultado:
+
+- La reentrega es **por diseño de `auto_ack=False` + ack manual** en `worker_cpu.py:143-203`:
+  la tarea queda unacked mientras se mina y RabbitMQ la devuelve a la cola si la conexión
+  muere. Ninguna transacción se pierde.
+- En el registro de RabbitMQ el `redeliver` pasa de 0 a 4: son los 4 chunks que se
+  reentregaron exactamente una vez. No hubo duplicados (los rangos disjuntos del pool
+  cooperativo impiden doble minado del mismo nonce).
+- **Matar el worker no bloquea el pipeline**: el NCT sigue esperando con
+  `MINING_TIMEOUT_SECONDS`, y el worker que retoma la tarea publica la solución en
+  `soluciones`; el NCT la valida (MD5 + dificultad) y confirma el bloque igual que siempre.
+- **Matar el contenedor vs. el proceso**: `docker compose kill` (y `docker kill`) son un
+  stop **manual** de Docker y, aunque requeuean el mensaje, **no** disparan la restart
+  policy `unless-stopped` del compose (hay que relanzar con `docker compose start`). En el
+  cluster GKE esto no aplica: el ReplicaSet del deployment `worker-cpu` recrea el pod
+  automáticamente, que es el escenario real de caída que cubre esta capa.
+
 ## Endpoints del NCT (ticket-aware)
 
 | Método | Ruta | Función |
