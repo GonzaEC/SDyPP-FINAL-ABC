@@ -24,15 +24,15 @@ blockchain de la cátedra).
 |---|---|---|---|---|
 | 1. Funciones de blockchain | 15 | 0 | 1 | Sólido: manejo de fallas probado; falta el modo competitivo |
 | 2. Plataforma escalable en K8s | 9 | 0 | 0 | Completo |
-| 3. Ambiente productivo real | 11 | 1 | 0 | Completo: StatefulSets migrados |
+| 3. Ambiente productivo real | 12 | 0 | 0 | Completo |
 | 4. Pruebas del sistema | 5 | 2 | 0 | Cubierta: 36 unit tests + matriz de carga corrida |
 | 5. Pipelines | 5 | 0 | 0 | Completo (1 ítem N/A) — filtro de Pipeline 4 arreglado |
 | 6. Repositorio y entrega | 5 | 0 | 1 | Falta solo el video |
 | 7. Informe | 6 | 0 | 0 | Completa — `docs/INFORME.md` |
-| **Total** | **56** | **3** | **2** | |
+| **Total** | **57** | **2** | **2** | |
 
-Quedan **2 faltantes**: el modo competitivo del pool (§1) y el video explicativo (§6).
-Los dos se pueden escribir sin nube; solo su verificación necesita cluster.
+Quedan **2 faltantes**: el modo competitivo del pool (§1) y el video explicativo (§6), y
+**2 parciales**, los dos de §4: llegar a bulks de 100.000 y a dificultades 6-8.
 
 ---
 
@@ -110,10 +110,31 @@ quedó sin faltantes.
 | tolerations / affinity / nodeSelector | ✅ | `nodeSelector` en los 7 workloads + separación **impuesta** por taints: pool `apps` tainteado (`apps=true:NoSchedule`) con tolerations en frontend, NCT, TrP, worker-cpu y Postgres; pool `monitoring` tainteado con tolerations en observabilidad; DaemonSets (alloy, node-exporter) toleran todo (`operator: Exists`). Infra queda **sin taint a propósito**: los addons de GKE (kube-dns, metrics-server) solo toleran `CriticalAddonsOnly`, necesitan una landing zone (ver `infra/gke.tf`) |
 | Uso de namespaces | ✅ | `sdypp` y `observability` |
 | RBAC en Kubernetes | ✅ | `trp-rbac.yaml` (scale de worker-cpu), `observability/rbac.yaml` |
-| Canal seguro entre nodos (TLS) | 🟡 | RabbitMQ es TLS-only en 5671. **Redis y Postgres van en texto plano** |
+| Canal seguro entre nodos (TLS) | ✅ | Cifrado **donde el tráfico cruza redes no controladas**, según [ADR-012](app/docs/adr/012-tls-donde-cruza-internet.md): HTTPS browser↔app (GKE Managed Certificate) y AMQPS workers GPU↔RabbitMQ (TLS-only en 5671, `listeners.tcp = none`). Pod-to-pod dentro del cluster va en texto plano **por decisión, no por omisión** — ver la nota debajo de esta tabla |
 | Zero static keys (Workload Identity / OIDC) | ✅ | Los 5 pipelines autentican por WIF, sin llaves en el repo |
 | Registros Docker (pull secrets o WI) | ✅ | Workload Identity con `artifactregistry.reader` |
 | Logs gestionados en memoria y disco | ✅ | Lista `logs` en Redis (acotada por el janitor del NCT) + Loki |
+
+### Sobre el alcance del TLS
+
+El checklist enumera "coordinador, workers, Redis, RabbitMQ". La postura del proyecto no es
+cifrar todos esos canales por igual, sino aplicar TLS **donde el tráfico sale de una red que
+controlamos**, que es donde un atacante podría interceptarlo:
+
+| Canal | Cruza red ajena | TLS |
+|---|---|---|
+| Browser ↔ app | Sí, internet | **HTTPS** (GKE Managed Certificate, `tesera.tech`) |
+| Workers GPU (cluster del profesor) ↔ RabbitMQ | Sí, entre clusters | **AMQPS** en 5671, sin listener plano |
+| NCT ↔ Redis · NCT ↔ TrP · app ↔ Postgres | No, pod-to-pod en la VPC | Texto plano |
+
+Está decidido y escrito desde el 2026-06-20 en
+[ADR-012](app/docs/adr/012-tls-donde-cruza-internet.md), antes de esta auditoría. La
+alternativa —mTLS en todo el cluster vía service mesh— se evaluó y se descartó por
+desproporcionada para el alcance del trabajo.
+
+**Es una decisión discutible y por eso queda a la vista:** si la cátedra espera cifrado
+también en el tráfico interno, el ítem vuelve a 🟡 y hace falta un ADR que supersede al 012,
+más tocar los cuatro servicios de Python que abren Redis y los manifiestos correspondientes.
 
 ---
 
