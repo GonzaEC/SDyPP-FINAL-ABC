@@ -66,6 +66,39 @@ El TrP (`monitor_loop`, cada 15s) revisa `heartbeat:gpu-server`:
 El estado vive en Redis (`trp:fallback_active`) con `SET NX` para que, con N réplicas de TrP,
 solo una ejecute la transición.
 
+### Prueba realizada (2026-08-05): ingreso/egreso de nodos GPU
+
+Con el compose raíz arriba se simuló el gpu-server publicando heartbeats en `heartbeat_gpu`
+(cada 10s, igual que `gpu-server.py`) y se midió la transición leyendo las métricas del TrP
+(`trp_gpu_alive` y `trp_fallback_active` desde `:9000/metrics`). Dos corridas, resultados
+estables:
+
+| Fase | Qué se hizo | Corrida 1 | Corrida 2 | Mecanismo que explica el tiempo |
+|---|---|---|---|---|
+| **Ingreso** | Arrancar el emisor de heartbeat (GPU "vuelve") | 28.7s | 25.4s | El `monitor_loop` (15s) debe notar la key nueva; el arranque del emisor cae en una fase arbitraria del ciclo |
+| **Egreso** | **Parar el emisor** (GPU "cae") | 45.1s | 45.0s | TTL de `heartbeat:gpu-server` en Redis (**30s**) + hasta un ciclo del `monitor_loop` (**15s**) = 30-45s |
+
+Confirmado también en los logs del TrP, que registran la transición exacta:
+
+```
+15:54:37 gpu-server activo de nuevo — restaurando modo GPU   (ingreso)
+15:55:37 gpu-server no responde — activando fallback CPU      (egreso)
+```
+
+Puntos a destacar:
+
+- El **egreso es el caso interesante**: no lo detecta el TrP "al instante", sino que depende
+  del TTL de Redis. El gpu-server renueva `heartbeat:gpu-server` cada 10s con TTL 30s; cuando
+  el emisor se para, la key sobrevive hasta 30s y recién en el ciclo siguiente del
+  `monitor_loop` (≤15s después) el TrP ve que no existe y activa el fallback. Resultado
+  medido: **~45s**, en el extremo superior del rango teórico 30-45s.
+- El **ingreso** es más rápido porque no hay TTL de por medio: alcanza con que el
+  `monitor_loop` vea la key una vez. La variación 25-29s depende de en qué punto del ciclo de
+  15s arrancó el emisor.
+- En ambos casos la transición es **atómica** (`SET NX` / `DEL` sobre `trp:fallback_active`),
+  así que con N réplicas de TrP solo una ejecuta `activate_fallback()` /
+  `restore_from_fallback()`.
+
 ## Protocolo del pool: cooperativo vs. competitivo
 
 El pool **es cooperativo por reparto de rangos disjuntos**: el TrP divide el espacio de nonces

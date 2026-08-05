@@ -134,7 +134,7 @@ Los tests de Python corren sin infraestructura: `tests/conftest.py` inyecta fake
 | Bulks de transacciones (1 → 100.000) | 🟡 | Verificado con 30-50 tx; no se llegó a 100.000 (minado CPU con dificultad >4 se vuelve impracticable en minutos) |
 | Dificultad de prefijo (1 → 8 caracteres) | 🟡 | Barrida 0-5 en las corridas. 6+ descartada: chunk 2.5M no resuelve (~15%/chunk) → loops de 65s |
 | Fragmentación del pool (1% → 50%) | ✅ | `TRP_CHUNK_SIZE` parametrizable; barrido 10% vs 25% (5× más rápido el 10%). Docs en `resultados/RESUMEN.md` |
-| Ingreso y egreso de nodos GPU | 🟡 | El mecanismo funciona (fallback verificado en producción), falta la prueba sistemática y medida |
+| Ingreso y egreso de nodos GPU | ✅ | Mecanismo verificado y **medido 2026-08-05**: egreso (parar el heartbeat) → fallback activo en ~45s (TTL Redis 30s + ciclo monitor 15s); ingreso → restaura en ~25-29s. Métricas `trp_gpu_alive` / `trp_fallback_active` (ver `Pilar2/P5/README.md` "Prueba realizada") |
 
 ---
 
