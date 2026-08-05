@@ -39,6 +39,14 @@ spec:
       serviceAccountName: trp-sa
       nodeSelector:
         pool: apps
+      # El pool apps está tainteado (apps=true:NoSchedule, ver infra/gke.tf):
+      # sin esta toleration el pod no podría programarse ahí. La separación de
+      # pools pasa de "sugerida" (nodeSelector) a "impuesta" (taint+toleration).
+      tolerations:
+        - key: apps
+          operator: Equal
+          value: "true"
+          effect: NoSchedule
       containers:
         - name: trp
           # Ningun servicio necesita capabilities del kernel ni escalar

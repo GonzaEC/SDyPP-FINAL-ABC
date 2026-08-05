@@ -27,6 +27,16 @@ spec:
           type: RuntimeDefault
       nodeSelector:
         pool: apps
+      # El pool apps está tainteado (apps=true:NoSchedule, ver infra/gke.tf):
+      # sin esta toleration el pod no podría programarse ahí. La separación de
+      # pools pasa de "sugerida" (nodeSelector) a "impuesta" (taint+toleration).
+      # Importante: el TrP escala este deployment vía la API de Kubernetes;
+      # los pods nuevos también llevan la toleration y programan igual.
+      tolerations:
+        - key: apps
+          operator: Equal
+          value: "true"
+          effect: NoSchedule
       containers:
         - name: worker-cpu
           # Ningun servicio necesita capabilities del kernel ni escalar

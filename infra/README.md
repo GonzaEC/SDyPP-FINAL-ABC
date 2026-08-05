@@ -16,8 +16,15 @@ Se ejecuta automáticamente via Pipeline 1 (GitHub Actions) en cada push a `infr
 - **Cluster** `sdypp-cluster` en `us-central1-a`, VPC-native, Workload Identity habilitado.
 - **Node pool `infra`**: 1× `e2-medium` (on-demand) — para Redis y RabbitMQ.
   - Label: `pool=infra`
+  - **Sin taint a propósito**: es la landing zone de los addons gestionados de GKE
+    (kube-dns/CoreDNS, metrics-server), que solo toleran `CriticalAddonsOnly` y no
+    toleran taints definidos por el usuario. Si los 3 pools estuvieran tainteados,
+    CoreDNS no tendría nodo donde programarse.
 - **Node pool `apps`**: 2× `e2-medium` (Spot) — para aplicaciones.
   - Label: `pool=apps`
+  - **Taint** `apps=true:NoSchedule`: impone la separación de pools — solo los
+    workloads de apps que declaran la toleration programan acá (frontend, NCT, TrP,
+    worker-cpu, Postgres).
   - Spot instances: ~60% más baratas, pueden ser preempted.
 
 ### Artifact Registry

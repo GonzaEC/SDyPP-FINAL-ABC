@@ -41,6 +41,10 @@ spec:
           type: RuntimeDefault
       nodeSelector:
         pool: infra
+      # El pool infra NO lleva taint a propósito (ver infra/gke.tf): los addons
+      # gestionados de GKE (kube-dns, metrics-server) solo toleran CriticalAddonsOnly
+      # y necesitan al menos un pool sin taint. Infra es la landing zone de esos
+      # pods; Redis/RabbitMQ siguen guiados por nodeSelector.
       containers:
         - name: rabbitmq
           # Ningun servicio necesita capabilities del kernel ni escalar

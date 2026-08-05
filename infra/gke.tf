@@ -46,6 +46,16 @@ resource "google_container_node_pool" "infra" {
       pool = "infra"
     }
 
+    # Este pool NO lleva taint a propósito (decisión de diseño, checklist §3):
+    # los addons gestionados de GKE (kube-dns/CoreDNS, metrics-server) solo
+    # toleran el taint CriticalAddonsOnly — NO toleran taints definidos por el
+    # usuario. Como apps y monitoring SÍ están tainteados, infra queda como la
+    # landing zone de esos pods de sistema; si también lo taineáramos, CoreDNS
+    # y metrics-server no tendrían nodo donde programarse y se rompería el DNS
+    # del cluster. Redis/RabbitMQ siguen guiados a este pool por nodeSelector
+    # (separación sugerida), mientras que en apps la separación es impuesta
+    # (taint + toleration).
+
     oauth_scopes = [
       "https://www.googleapis.com/auth/cloud-platform",
     ]
@@ -83,6 +93,23 @@ resource "google_container_node_pool" "apps" {
 
     labels = {
       pool = "apps"
+    }
+
+    # Taint para IMPONER la separación de pools (checklist §3): sin el taint,
+    # el nodeSelector era solo una sugerencia — un pod sin nodeSelector (o con
+    # un selector mal escrito) podía aterrizar acá. Con el taint, solo los
+    # workloads de apps (frontend, NCT, TrP, worker-cpu, Postgres; todos
+    # declaran la toleration) se programan en este pool. Los pods de infra y
+    # monitoring no lo toleran. Los DaemonSets de observabilidad (alloy,
+    # node-exporter) ya toleran cualquier taint (`operator: Exists`).
+    #
+    # Nota: infra queda SIN taint de propósito (ver arriba) para que los addons
+    # de GKE tengan una landing zone; aquí la separación apps↔infra queda
+    # impuesta por el taint + el nodeSelector de cada workload.
+    taint {
+      key    = "apps"
+      value  = "true"
+      effect = "NO_SCHEDULE"
     }
 
     oauth_scopes = [

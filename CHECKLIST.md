@@ -24,12 +24,12 @@ blockchain de la cátedra).
 |---|---|---|---|---|
 | 1. Funciones de blockchain | 15 | 0 | 1 | Sólido: manejo de fallas probado; falta el modo competitivo |
 | 2. Plataforma escalable en K8s | 9 | 0 | 0 | Completo |
-| 3. Ambiente productivo real | 10 | 2 | 0 | Completo: StatefulSets migrados |
-| 4. Pruebas del sistema | 4 | 3 | 0 | Cubierta: 36 unit tests + matriz de carga corrida |
+| 3. Ambiente productivo real | 11 | 1 | 0 | Completo: StatefulSets migrados |
+| 4. Pruebas del sistema | 5 | 2 | 0 | Cubierta: 36 unit tests + matriz de carga corrida |
 | 5. Pipelines | 5 | 0 | 0 | Completo (1 ítem N/A) — filtro de Pipeline 4 arreglado |
 | 6. Repositorio y entrega | 5 | 0 | 1 | Falta solo el video |
 | 7. Informe | 6 | 0 | 0 | Completa — `docs/INFORME.md` |
-| **Total** | **54** | **5** | **2** | |
+| **Total** | **56** | **3** | **2** | |
 
 Quedan **2 faltantes**: el modo competitivo del pool (§1) y el video explicativo (§6).
 Los dos se pueden escribir sin nube; solo su verificación necesita cluster.
@@ -107,7 +107,7 @@ quedó sin faltantes.
 | Servicios como StatefulSet para escalar con PVC | ✅ | Postgres, Redis y RabbitMQ migrados a `StatefulSet` con `volumeClaimTemplates`; se borraron los PVC estáticos |
 | Limitación de recursos | ✅ | Los 7 workloads tienen `resources:` |
 | `securityContext` (no root, mínimo necesario) | ✅ | Los 7 workloads con `runAsNonRoot`, uid explícito, `seccompProfile` y `drop: [ALL]`. Pendiente menor: alertmanager, grafana y los 3 exporters de observabilidad |
-| tolerations / affinity / nodeSelector | 🟡 | `nodeSelector` en los 7 workloads (separa `pool=infra` de `pool=apps`), pero `tolerations`/`affinity` solo en observabilidad |
+| tolerations / affinity / nodeSelector | ✅ | `nodeSelector` en los 7 workloads + separación **impuesta** por taints: pool `apps` tainteado (`apps=true:NoSchedule`) con tolerations en frontend, NCT, TrP, worker-cpu y Postgres; pool `monitoring` tainteado con tolerations en observabilidad; DaemonSets (alloy, node-exporter) toleran todo (`operator: Exists`). Infra queda **sin taint a propósito**: los addons de GKE (kube-dns, metrics-server) solo toleran `CriticalAddonsOnly`, necesitan una landing zone (ver `infra/gke.tf`) |
 | Uso de namespaces | ✅ | `sdypp` y `observability` |
 | RBAC en Kubernetes | ✅ | `trp-rbac.yaml` (scale de worker-cpu), `observability/rbac.yaml` |
 | Canal seguro entre nodos (TLS) | 🟡 | RabbitMQ es TLS-only en 5671. **Redis y Postgres van en texto plano** |
