@@ -1,10 +1,6 @@
 # Declaración de uso de herramientas de IA
 
-Declaración solicitada por la cátedra de Sistemas Distribuidos y Programación Paralela
-sobre el uso de herramientas de IA/LLM en el desarrollo de este trabajo final.
 
-**Documento:** declaración honesta y de buena fe. Elaborada por el equipo y revisable
-punto a punto.
 
 ---
 
@@ -79,8 +75,6 @@ archivos de trabajo local: sirven para que el asistente arranque con el contexto
 no proponga soluciones incompatibles con las decisiones ya tomadas (las mismas que están
 documentadas, esas sí versionadas, en `app/docs/adr/`).
 
-Se los menciona acá por transparencia. Si la cátedra prefiere verlos como evidencia del
-proceso, alcanza con sacarlos del `.gitignore`.
 
 ---
 
