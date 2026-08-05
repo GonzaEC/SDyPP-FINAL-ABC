@@ -30,7 +30,12 @@ durante el desarrollo. En todos los casos:
 |-------------|------|--------------------------|
 | Asistente de código / agente (CLI) | LLM | Generación y refactor de código (Python blockchain, Next.js/TS), escritura de manifiestos K8s/Terraform y workflows de CI/CD; revisión y debugging; esta declaración. |
 | Auto-completado / IDE | LLM | Completado en línea y refactor menor dentro del editor. |
-| Generación de imágenes / placeholders | — | Assets de la app cuando corresponda. *(Completar si aplica.)* |
+
+**No se usaron generadores de imágenes.** Los únicos assets gráficos versionados son los
+SVG que vienen por defecto con `create-next-app` (`public/{file,globe,next,vercel,window}.svg`),
+los íconos propios de la app y los cuatro gráficos de `Pilar2/P5/resultados/graficos/`, que
+produce `graficos.py` con matplotlib a partir de los CSV de las pruebas de carga. Las
+imágenes de los eventos las suben los usuarios a Cloudinary.
 
 ---
 
@@ -62,9 +67,20 @@ durante el desarrollo. En todos los casos:
 
 ## 5. Aclaración sobre herramientas embebidas en el repo
 
-En el repositorio hay archivos como `CLAUDE.md` / `AGENTS.md` que pueden sugerir
-instrucciones a asistentes. *(Nota del equipo: verificar si están presentes y qué
-contenido tienen antes de entregar; si no aplican, eliminar esta sección.)*
+El proyecto usa dos archivos de contexto para desarrollo asistido, ambos en `app/`:
+
+| Archivo | Contenido |
+|---|---|
+| `app/CLAUDE.md` | Decisiones de arquitectura que se asumen en todo el código de la app: el modelo de identidad ECDSA, la custodia de la clave privada, el formato canónico de firma, y las convenciones de Next.js 16 y Prisma 7 del proyecto. |
+| `app/AGENTS.md` | Una advertencia sobre la versión de Next.js usada, para que el asistente consulte la documentación de la versión instalada en vez de asumir APIs viejas. |
+
+**Los dos están en `.gitignore`, así que no forman parte del repositorio entregado.** Son
+archivos de trabajo local: sirven para que el asistente arranque con el contexto correcto y
+no proponga soluciones incompatibles con las decisiones ya tomadas (las mismas que están
+documentadas, esas sí versionadas, en `app/docs/adr/`).
+
+Se los menciona acá por transparencia. Si la cátedra prefiere verlos como evidencia del
+proceso, alcanza con sacarlos del `.gitignore`.
 
 ---
 
