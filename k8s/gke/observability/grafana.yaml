@@ -89,8 +89,26 @@ spec:
           operator: Equal
           value: "true"
           effect: NoSchedule
+      # Endurecimiento del pod (checklist §3): Grafana corre con su uid propio
+      # 472 (no root) — se fuerza explícitamente + seccomp por defecto. fsGroup
+      # 472 para que la DB de Grafana (/var/lib/grafana) y los ConfigMaps
+      # montados queden accesibles con el grupo de la app.
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 472
+        runAsGroup: 472
+        fsGroup: 472
+        seccompProfile:
+          type: RuntimeDefault
       containers:
         - name: grafana
+          # Ningun servicio necesita capabilities del kernel ni escalar
+          # privilegios.
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
           image: grafana/grafana:11.2.2
           env:
             - name: GF_SECURITY_ADMIN_USER

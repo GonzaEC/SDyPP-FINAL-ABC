@@ -37,8 +37,24 @@ spec:
           operator: Equal
           value: "true"
           effect: NoSchedule
+      # Endurecimiento del pod (checklist §3): la imagen oliver006/redis_exporter
+      # ya corre como uid 59000 (non-root); se fuerza explícitamente + seccomp
+      # por defecto. Sin volúmenes: no hace falta fsGroup.
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 59000
+        runAsGroup: 59000
+        seccompProfile:
+          type: RuntimeDefault
       containers:
         - name: redis-exporter
+          # Ningun servicio necesita capabilities del kernel ni escalar
+          # privilegios.
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
           image: oliver006/redis_exporter:v1.62.0
           env:
             - name: REDIS_ADDR
@@ -78,8 +94,24 @@ spec:
           operator: Equal
           value: "true"
           effect: NoSchedule
+      # Endurecimiento del pod (checklist §3): la imagen postgres-exporter corre
+      # como uid/gid 65534 (nobody); se fuerza explícitamente + seccomp por
+      # defecto. Sin volúmenes: no hace falta fsGroup.
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65534
+        runAsGroup: 65534
+        seccompProfile:
+          type: RuntimeDefault
       containers:
         - name: postgres-exporter
+          # Ningun servicio necesita capabilities del kernel ni escalar
+          # privilegios.
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
           image: prometheuscommunity/postgres-exporter:v0.16.0
           env:
             # Credenciales por defecto del proyecto (ver configmap app-config).
@@ -122,8 +154,24 @@ spec:
           operator: Equal
           value: "true"
           effect: NoSchedule
+      # Endurecimiento del pod (checklist §3): la imagen kube-state-metrics corre
+      # como nobody (65534); se fuerza explícitamente + seccomp por defecto.
+      # Sin volúmenes: no hace falta fsGroup.
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65534
+        runAsGroup: 65534
+        seccompProfile:
+          type: RuntimeDefault
       containers:
         - name: kube-state-metrics
+          # Ningun servicio necesita capabilities del kernel ni escalar
+          # privilegios.
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
           image: registry.k8s.io/kube-state-metrics/kube-state-metrics:v2.13.0
           ports:
             - containerPort: 8080

@@ -106,7 +106,7 @@ quedó sin faltantes.
 | HPA por métricas comunes o específicas | ✅ | `k8s/gke/apps/hpa.yaml`: frontend (2-6) y NCT (2-4) por CPU al 70%. worker-cpu queda fuera a propósito: su ciclo de vida lo maneja el TrP |
 | Servicios como StatefulSet para escalar con PVC | ✅ | Postgres, Redis y RabbitMQ migrados a `StatefulSet` con `volumeClaimTemplates`; se borraron los PVC estáticos |
 | Limitación de recursos | ✅ | Los 7 workloads tienen `resources:` |
-| `securityContext` (no root, mínimo necesario) | ✅ | Los 7 workloads con `runAsNonRoot`, uid explícito, `seccompProfile` y `drop: [ALL]`. Pendiente menor: alertmanager, grafana y los 3 exporters de observabilidad |
+| `securityContext` (no root, mínimo necesario) | ✅ | Los 7 workloads con `runAsNonRoot`, uid explícito, `seccompProfile` y `drop: [ALL]`. Observabilidad endurecida 2026-08-05: alertmanager (65534), grafana (472), redis-exporter (59000), postgres-exporter (65534) y kube-state-metrics (65534). Excepciones deliberadas: DaemonSets node-exporter y alloy (necesitan acceso al host) |
 | tolerations / affinity / nodeSelector | ✅ | `nodeSelector` en los 7 workloads + separación **impuesta** por taints: pool `apps` tainteado (`apps=true:NoSchedule`) con tolerations en frontend, NCT, TrP, worker-cpu y Postgres; pool `monitoring` tainteado con tolerations en observabilidad; DaemonSets (alloy, node-exporter) toleran todo (`operator: Exists`). Infra queda **sin taint a propósito**: los addons de GKE (kube-dns, metrics-server) solo toleran `CriticalAddonsOnly`, necesitan una landing zone (ver `infra/gke.tf`) |
 | Uso de namespaces | ✅ | `sdypp` y `observability` |
 | RBAC en Kubernetes | ✅ | `trp-rbac.yaml` (scale de worker-cpu), `observability/rbac.yaml` |

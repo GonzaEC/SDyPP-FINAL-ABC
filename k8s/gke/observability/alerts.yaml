@@ -146,8 +146,25 @@ spec:
           operator: Equal
           value: "true"
           effect: NoSchedule
+      # Endurecimiento del pod (checklist §3): la imagen prom/alertmanager corre
+      # como nobody (65534), igual que prom/prometheus; se fuerza explícitamente
+      # + seccomp por defecto. El estado (nflog/silences) se escribe en el dir
+      # efímero de la imagen, ya pre-asignado a 65534.
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65534
+        runAsGroup: 65534
+        seccompProfile:
+          type: RuntimeDefault
       containers:
         - name: alertmanager
+          # Ningun servicio necesita capabilities del kernel ni escalar
+          # privilegios.
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
           image: prom/alertmanager:v0.27.0
           args:
             - --config.file=/etc/alertmanager/alertmanager.yml
