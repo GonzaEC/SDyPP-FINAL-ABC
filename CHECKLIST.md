@@ -152,7 +152,7 @@ Los tests de Python corren sin infraestructura: `tests/conftest.py` inyecta fake
 | Pruebas unitarias y de integración de lo crítico | ✅ | 36 unit tests (14 TS + 22 Python): firma ECDSA, pagos/refunds, PoW, ownership de tickets. En `app/src/**/*.test.ts` y `Pilar2/P5/tests/` |
 | N transacciones con M recursos | ✅ | Matriz corrida y guardada en `Pilar2/P5/resultados/` (bulk 30, d4, chunk 25%: M=1 avg 17.7s, M=2 avg 8.3s) |
 | N transacciones con 2×M recursos | ✅ | ídem (M=2 celdas en `c_m2_*`) |
-| Bulks de transacciones (1 → 100.000) | 🟡 | Verificado con 30-50 tx; no se llegó a 100.000 (minado CPU con dificultad >4 se vuelve impracticable en minutos) |
+| Bulks de transacciones (1 → 100.000) | 🟡 | Medido hasta **10.000 tx: 10.000/10.000 confirmadas en 266,6s** (avg ttc 6,61s, p95 7,39s), 4 workers, dificultad 2. Throughput sostenido **37,5 tx/s**. Las 100.000 no se corrieron: al ritmo medido son ~44 min de una sola corrida. Ver `resultados/RESUMEN-2026-08-05.md` |
 | Dificultad de prefijo (1 → 8 caracteres) | ✅ | Barrida 0-6 medida (d6: 10/10 en 37,4s con 4 workers). Las 7 y 8 quedan **calculadas** con la velocidad medida de 904.373 hashes/s: 1,2 min y 20 min por bloque. Ver `resultados/RESUMEN-2026-08-05.md` |
 | Fragmentación del pool (1% → 50%) | ✅ | `TRP_CHUNK_SIZE` parametrizable; barrido 10% vs 25% (5× más rápido el 10%). Docs en `resultados/RESUMEN.md` |
 | Ingreso y egreso de nodos GPU | ✅ | Mecanismo verificado y **medido 2026-08-05**: egreso (parar el heartbeat) → fallback activo en ~45s (TTL Redis 30s + ciclo monitor 15s); ingreso → restaura en ~25-29s. Métricas `trp_gpu_alive` / `trp_fallback_active` (ver `Pilar2/P5/README.md` "Prueba realizada") |
