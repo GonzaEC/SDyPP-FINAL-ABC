@@ -131,6 +131,17 @@ services:
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
       OTEL_EXPORTER_OTLP_ENDPOINT: http://alloy:4317
       OTEL_SERVICE_NAME: nct
+      # Cuánto espera el NCT una solución antes de abandonar el bloque. El
+      # default de 180s alcanza hasta dificultad 6 (~19s de minado con un
+      # worker), pero con 7 ceros el minado esperado son ~5 minutos y TODOS los
+      # bloques abortarían. Para barrer dificultades altas hay que subirlo:
+      #   MINING_TIMEOUT_SECONDS=900 docker compose up -d nct
+      MINING_TIMEOUT_SECONDS: ${MINING_TIMEOUT_SECONDS:-180}
+      # Espacio de nonces por bloque. Es el valor que MANDA: el NCT lo envía
+      # como start/end en cada tarea y pisa al TRP_TOTAL_RANGE del TrP.
+      # Para dificultades altas hay que ampliarlo (nonce esperado = 16^ceros):
+      #   NCT_NONCE_RANGE=50000000 MINING_TIMEOUT_SECONDS=900 docker compose up -d nct
+      NCT_NONCE_RANGE: ${NCT_NONCE_RANGE:-10000000}
     ports:
       - "8000:8000"
     healthcheck:
@@ -171,6 +182,12 @@ services:
       OTEL_SERVICE_NAME: trp
       TRP_TOTAL_RANGE: ${TRP_TOTAL_RANGE:-10000000}
       TRP_CHUNK_SIZE: ${TRP_CHUNK_SIZE:-2500000}
+      # Protocolo del pool (ver ADR-028). `competitivo` publica el rango
+      # completo una vez por worker en lugar de repartirlo en chunks disjuntos:
+      # existe para poder MEDIR el costo del desperdicio, no para producción.
+      #   TRP_MODE=competitivo docker compose up -d trp
+      TRP_MODE: ${TRP_MODE:-cooperativo}
+      TRP_COMPETITIVE_COPIES: ${TRP_COMPETITIVE_COPIES:-auto}
 
   worker-cpu:
     build:

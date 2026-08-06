@@ -1,6 +1,6 @@
 # ADR-027: Pool de minado cooperativo, no competitivo
 
-**Estado**: Accepted
+**Estado**: Superseded by [ADR-028](028-modo-competitivo-tras-flag.md)
 **Fecha**: 2026-08-04
 
 ## Contexto

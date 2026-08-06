@@ -161,6 +161,42 @@ def safe_queue_purge(queue: str):
         result = channel.queue_purge(queue=queue)
         return getattr(result, "message_count", getattr(getattr(result, "method", None), "message_count", 0))
 
+def purge_stale_tasks(task_id: str):
+    """Descarta los chunks del intento anterior antes de publicar uno nuevo.
+
+    Por qué hace falta: cuando un worker encuentra el nonce, los chunks restantes
+    de ESE bloque siguen encolados en `tareas` y los workers los barren igual —
+    millones de nonces de un bloque que ya está cerrado. Peor: quedan adelante en
+    la cola FIFO, así que los chunks del intento siguiente esperan detrás de
+    basura. Con rangos grandes eso se vuelve una espiral: medimos 8 intentos de
+    minado para un solo bloque, con 160 chunks publicados y 55 todavía en cola al
+    terminar la corrida.
+
+    Purgar acá es seguro porque el minado está serializado por el lock
+    distribuido (`acquire_mining_lock`): cuando esta función corre, no hay ningún
+    otro intento en vuelo, así que todo lo que quede en `tareas` es obsoleto por
+    definición.
+    """
+    try:
+        purged = safe_queue_purge("tareas")
+        if purged:
+            r.rpush("logs", json.dumps({
+                "timestamp": time.time(),
+                "event": "chunks_obsoletos_purgados",
+                "task_id": task_id,
+                "count": purged,
+            }))
+        return purged
+    except Exception as e:
+        r.rpush("logs", json.dumps({
+            "timestamp": time.time(),
+            "event": "purga_tareas_fallo",
+            "task_id": task_id,
+            "error": str(e),
+        }))
+        return 0
+
+
 def purge_stale_solutions(task_id: str):
     try:
         purged = safe_queue_purge("soluciones")
@@ -273,7 +309,19 @@ def wait_for_solution(task_id: str, timeout_seconds: int, data: str = None, diff
 # CONFIGURACION
 # -------------------------
 
-TOTAL = 10000000
+# Espacio de nonces que se barre por bloque. El NCT lo manda como start/end en
+# cada tarea, así que ESTE es el valor que manda: el TRP_TOTAL_RANGE del TrP es
+# solo un fallback para tareas que llegaran sin rango, cosa que no pasa en el
+# flujo normal.
+#
+# Por qué es parametrizable: el nonce esperado para una dificultad de k ceros es
+# 16^k. Con el default de 10M, a partir de 6 ceros (16^6 = 16.777.216) la
+# solución típicamente NO está dentro del espacio barrido, y el bloque depende
+# de reintentos del auto-miner en vez de resolverse en el primer intento.
+# Para barrer dificultades altas hay que subirlo a ~3x el esperado:
+#   dificultad 6 →    50.000.000
+#   dificultad 7 →   800.000.000
+TOTAL = int(os.getenv("NCT_NONCE_RANGE", "10000000"))
 # Tope de la lista "logs" en Redis. Es telemetría/debug, no fuente de verdad,
 # así que la acotamos para que no crezca sin límite y termine OOM-kileando a
 # Redis (que es el cerebro de todo el sistema). El logs_janitor de abajo la
@@ -775,6 +823,11 @@ def _mine_one_block():
             # continúa la misma traza al subdividir/publicar a los workers.
             "_trace": obs.inject_trace_context(),
         }
+        # Limpiar los chunks del intento anterior antes de publicar los nuestros:
+        # si no, los workers gastan CPU en rangos de bloques ya cerrados y nuestros
+        # chunks esperan detrás de ellos en la cola.
+        purge_stale_tasks(task_id)
+
         mine_start = time.time()
         safe_basic_publish('tareas_pool', json.dumps(tarea_completa))
 

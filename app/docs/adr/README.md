@@ -38,7 +38,8 @@ Las ADRs son cortas, inmutables (no se editan, se reemplazan), y se numeran en o
 | [024](024-ci-cd-cuatro-pipelines.md) | CI/CD con cuatro pipelines especializados | Accepted |
 | [025](025-reserva-atomica-y-refund.md) | Reserva atómica de entradas e invariante de reembolso | Accepted |
 | [026](026-autoescalado-y-dueno-del-worker-cpu.md) | Autoescalado por HPA, con el worker-cpu fuera | Accepted |
-| [027](027-pool-cooperativo-no-competitivo.md) | Pool de minado cooperativo, no competitivo | Accepted |
+| [027](027-pool-cooperativo-no-competitivo.md) | Pool de minado cooperativo, no competitivo | Superseded by ADR-028 |
+| [028](028-modo-competitivo-tras-flag.md) | Modo competitivo detrás de un flag, cooperativo por default | Accepted |
 
 ## Cómo escribir una nueva
 

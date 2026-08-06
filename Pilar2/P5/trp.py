@@ -29,6 +29,10 @@ TRP_CHUNKS = Counter("trp_chunks_published_total", "Sub-tareas (chunks) publicad
 TRP_FALLBACK_ACTIVE = Gauge("trp_fallback_active", "1 si el fallback a CPU esta activo")
 TRP_GPU_ALIVE = Gauge("trp_gpu_alive", "1 si el gpu-server tiene heartbeat vivo")
 TRP_SCALE_EVENTS = Counter("trp_cpu_scale_events_total", "Eventos de escalado de worker-cpu", ["action"])
+# Deja el protocolo activo visible en Prometheus. Sin esto, al comparar dos
+# corridas no habria forma de saber desde las metricas en que modo corrio cada
+# una — y la comparativa cooperativo vs competitivo depende justo de eso.
+TRP_MODE_COMPETITIVE = Gauge("trp_mode_competitive", "1 si el pool corre en modo competitivo")
 
 # -------------------------
 # CONEXIONES
@@ -236,6 +240,56 @@ TOTAL       = int(os.getenv("TRP_TOTAL_RANGE", "10000000"))
 # entre workers).
 CHUNK_SIZE  = int(os.getenv("TRP_CHUNK_SIZE", "2500000"))
 
+# Protocolo del pool. Ver ADR-028.
+#
+#   cooperativo (default) → el espacio [start, end] se parte en chunks DISJUNTOS
+#                           de CHUNK_SIZE y cada worker barre un tramo distinto.
+#                           Nadie repite trabajo.
+#   competitivo           → se publica el rango COMPLETO N veces, una por worker
+#                           vivo. Todos arrancan en el mismo nonce y gana el
+#                           primero que encuentra solución; el resto tira su
+#                           trabajo. Existe para poder MEDIR el costo del
+#                           desperdicio, no porque convenga en esta topología.
+#
+# El árbitro ya existía y no hubo que tocarlo: el NCT acepta la primera solución
+# válida y descarta las que llegan después con `stale_task`.
+TRP_MODE = os.getenv("TRP_MODE", "cooperativo").strip().lower()
+
+# Cuántas copias publicar en modo competitivo. "auto" = una por worker vivo.
+TRP_COMPETITIVE_COPIES = os.getenv("TRP_COMPETITIVE_COPIES", "auto").strip().lower()
+
+# Validar antes de exponer la métrica: un valor mal escrito debe degradar a
+# cooperativo (el default seguro) y quedar reflejado como tal en Prometheus.
+if TRP_MODE not in ("cooperativo", "competitivo"):
+    log.warning(f"TRP_MODE={TRP_MODE!r} no reconocido; uso cooperativo")
+    TRP_MODE = "cooperativo"
+TRP_MODE_COMPETITIVE.set(1 if TRP_MODE == "competitivo" else 0)
+log.info(f"Protocolo del pool: {TRP_MODE.upper()}")
+
+
+def contar_workers_vivos() -> int:
+    """Workers disponibles según los heartbeats vigentes en Redis.
+
+    Ojo con la asimetría del sistema: solo `worker_cpu.py` publica un heartbeat
+    propio (`heartbeat:{worker_id}`, TTL 30s). Los workers GPU no lo hacen — su
+    vitalidad se representa con la única clave `heartbeat:gpu-server`, que este
+    mismo TrP escribe al consumir la cola `heartbeat_gpu`. Por eso el conteo es
+    "workers CPU vivos, más uno si el gpu-server responde".
+
+    Devuelve como mínimo 1: publicar cero copias dejaría el bloque sin minar.
+    """
+    try:
+        n = sum(
+            1 for k in r.scan_iter(match="heartbeat:*", count=100)
+            if k != "heartbeat:gpu-server"
+        )
+        if r.exists("heartbeat:gpu-server"):
+            n += 1
+        return max(1, n)
+    except Exception as e:
+        log.warning(f"No pude contar workers vivos ({e}); asumo 1")
+        return 1
+
 
 # Recibe una tarea del NCT con start/end opcionales,
 # la fragmenta en chunks y publica cada uno en 'tareas'.
@@ -248,7 +302,17 @@ def subdivide_and_publish(tarea: dict):
     data       = tarea["data"]
 
     total_range = end - start
-    n_chunks    = math.ceil(total_range / CHUNK_SIZE)
+    competitivo = TRP_MODE == "competitivo"
+
+    if competitivo:
+        # Una copia del rango completo por worker. No hay subdivisión: el
+        # "reparto" es que todos hagan lo mismo y gane el primero.
+        n_mensajes = (
+            contar_workers_vivos() if TRP_COMPETITIVE_COPIES == "auto"
+            else max(1, int(TRP_COMPETITIVE_COPIES))
+        )
+    else:
+        n_mensajes = math.ceil(total_range / CHUNK_SIZE)
 
     # Continuamos la traza que arrancó el NCT (contexto embebido en el payload).
     parent_ctx = obs.extract_trace_context(tarea.get("_trace"))
@@ -256,14 +320,23 @@ def subdivide_and_publish(tarea: dict):
         if parent_ctx is not None else tracer.start_as_current_span("trp_subdivide")
     with span_cm as span:
         span.set_attribute("task_id", str(task_id))
-        span.set_attribute("chunks", n_chunks)
-        log.info(f"Subdividiendo tarea en {n_chunks} chunks (dificultad: {difficulty})")
+        span.set_attribute("chunks", n_mensajes)
+        span.set_attribute("modo", TRP_MODE)
+        if competitivo:
+            log.info(f"Modo COMPETITIVO: publicando el rango completo "
+                     f"[{start}-{end}] a {n_mensajes} worker(s) (dificultad: {difficulty})")
+        else:
+            log.info(f"Subdividiendo tarea en {n_mensajes} chunks (dificultad: {difficulty})")
 
         # El contexto a propagar a los workers se toma del span actual.
         trace_ctx = obs.inject_trace_context()
-        for i in range(n_chunks):
-            chunk_start = start + i * CHUNK_SIZE
-            chunk_end   = min(chunk_start + CHUNK_SIZE - 1, end)
+        for i in range(n_mensajes):
+            if competitivo:
+                # Todos reciben exactamente el mismo trabajo.
+                chunk_start, chunk_end = start, end
+            else:
+                chunk_start = start + i * CHUNK_SIZE
+                chunk_end   = min(chunk_start + CHUNK_SIZE - 1, end)
 
             subtarea = {
                 "task_id":    task_id,
@@ -290,7 +363,8 @@ def subdivide_and_publish(tarea: dict):
         "timestamp": time.time(),
         "event":     "trp_subdividio_tarea",
         "task_id":   task_id,
-        "chunks":    n_chunks,
+        "chunks":    n_mensajes,
+        "modo":      TRP_MODE,
         "difficulty": difficulty
     }))
 
