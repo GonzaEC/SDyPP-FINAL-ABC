@@ -143,6 +143,69 @@ transacción depende de en qué bloque le tocó caer, no de su posición en la c
 
 ---
 
+## 3.5 Dos defectos que las mediciones destaparon
+
+Al intentar subir la dificultad más allá de 5 aparecieron dos problemas que se tapaban
+entre sí. Vale contarlos porque son el ejemplo más claro del trabajo de este pilar: **medir
+no solo produjo números, produjo diagnósticos.**
+
+### El espacio de búsqueda estaba hardcodeado
+
+`nct.py` fijaba `TOTAL = 10000000` y el NCT manda ese rango como `start`/`end` en cada
+tarea, pisando siempre la variable de entorno equivalente del TrP. Esa variable, agregada
+justamente para poder barrer configuraciones, **nunca tomaba efecto**.
+
+El efecto es aritmético: con 6 ceros el nonce esperado es 16⁶ = 16.777.216, y el espacio
+barrido eran 10.000.000. La solución **no estaba adentro** la mayor parte de las veces. La
+dificultad 6 no era lenta, se estaba buscando en el lugar equivocado.
+
+### Nadie descartaba el trabajo obsoleto
+
+Cuando un worker encuentra el nonce, los chunks restantes de ese bloque siguen encolados y
+los workers los barren igual — millones de nonces de un bloque ya cerrado. Y como la cola
+es FIFO, los chunks del intento siguiente **esperan detrás de esa basura**.
+
+Con rangos chicos casi no se nota. Al ampliar el rango se vuelve una espiral. Medido, para
+un solo bloque: **8 intentos de minado, 160 chunks publicados y 55 todavía encolados** al
+terminar la corrida.
+
+El arreglo fue chico —el NCT ya purgaba la cola de soluciones, faltaba hacer lo mismo con
+la de tareas antes de publicar un intento nuevo— y el efecto, grande:
+
+| 10 tx, dificultad 6, 4 workers | Antes | Después |
+|---|---|---|
+| Confirmadas | 8/10 | **10/10** |
+| Tiempo total | 250,9s | **37,6s** |
+| ttc promedio | 236,9s | **37,4s** |
+
+**6,3× más rápido y sin transacciones perdidas.** Detalle en
+[`Pilar2/P5/resultados/RESUMEN-2026-08-05.md`](../Pilar2/P5/resultados/RESUMEN-2026-08-05.md).
+
+## 3.6 Los dos protocolos, medidos
+
+Con el modo competitivo implementado tras un flag, se corrió la misma matriz en ambos
+(10 tx, dificultad 5, 4 workers, 3 repeticiones):
+
+| Modo | ttc promedio | hashes promedio |
+|---|---|---|
+| Cooperativo | **4,57s** | 2,28M |
+| Competitivo | 10,04s | 4,32M |
+
+El competitivo resultó ~2,2× más lento y ~1,9× más caro. Pero la varianza entre
+repeticiones es enorme (de 2,8s a 19,2s) porque la posición del nonce ganador sigue una
+distribución geométrica, de cola larga por naturaleza: con 3 repeticiones los promedios dan
+la dirección correcta, no un multiplicador preciso.
+
+El dato exacto es el estructural, verificable sin correr nada: con N workers el modo
+competitivo publica **N copias del espacio** contra **1 sola** del cooperativo. Y más
+importante que el multiplicador: en modo competitivo **agregar workers no acelera nada**,
+porque todos arrancan en el mismo nonce y recorren el mismo espacio. El cooperativo divide
+y escala; el competitivo replica y no.
+
+Eso confirma con datos propios lo que hasta ahora era solo un argumento: el desperdicio del
+modo competitivo compra resistencia a mineros que no confían entre sí, y en un pool de
+workers propios se paga sin obtener nada a cambio.
+
 ## 4. Síntesis: los dos niveles juntos
 
 Acá está, para nosotros, la conclusión más interesante del trabajo.

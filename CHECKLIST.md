@@ -3,7 +3,7 @@
 Auditoría del repositorio contra `2026_SDYPP_checklist-blockchain-v2.docx` (checklist de
 blockchain de la cátedra).
 
-**Última actualización:** 2026-08-04
+**Última actualización:** 2026-08-05
 
 | Símbolo | Significado |
 |---|---|
@@ -22,17 +22,17 @@ blockchain de la cátedra).
 
 | Sección | ✅ | 🟡 | ❌ | Estado |
 |---|---|---|---|---|
-| 1. Funciones de blockchain | 15 | 0 | 1 | Sólido: manejo de fallas probado; falta el modo competitivo |
+| 1. Funciones de blockchain | 16 | 0 | 0 | Completo |
 | 2. Plataforma escalable en K8s | 9 | 0 | 0 | Completo |
 | 3. Ambiente productivo real | 12 | 0 | 0 | Completo |
-| 4. Pruebas del sistema | 5 | 2 | 0 | Cubierta: 36 unit tests + matriz de carga corrida |
+| 4. Pruebas del sistema | 6 | 1 | 0 | Dificultad 6 medida; 7 y 8 calculadas |
 | 5. Pipelines | 5 | 0 | 0 | Completo (1 ítem N/A) — filtro de Pipeline 4 arreglado |
 | 6. Repositorio y entrega | 5 | 0 | 1 | Falta solo el video |
 | 7. Informe | 6 | 0 | 0 | Completa — `docs/INFORME.md` |
-| **Total** | **57** | **2** | **2** | |
+| **Total** | **59** | **1** | **1** | |
 
-Quedan **2 faltantes**: el modo competitivo del pool (§1) y el video explicativo (§6), y
-**2 parciales**, los dos de §4: llegar a bulks de 100.000 y a dificultades 6-8.
+Queda **1 faltante**: el video explicativo (§6). Y **1 parcial**: llegar a bulks de 100.000
+(medido hasta 10.000). Todo lo demás está cerrado.
 
 ---
 
@@ -42,7 +42,7 @@ Quedan **2 faltantes**: el modo competitivo del pool (§1) y el video explicativ
 |---|---|---|
 | Nodos con clave pública y privada | ✅ | ECDSA P-256, `app/src/lib/crypto/`, verificación de firma en `Pilar2/P5/nct.py` |
 | Pool de minado — modo **cooperativo** | ✅ | TrP subdivide en chunks de 2.5M nonces (`Pilar2/P5/trp.py`) |
-| Pool de minado — modo **competitivo** | ❌ | No implementado ni documentado. Hoy solo hay reparto de rangos disjuntos |
+| Pool de minado — modo **competitivo** | ✅ | Implementado tras el flag `TRP_MODE=competitivo` en `trp.py` (ver [ADR-028](app/docs/adr/028-modo-competitivo-tras-flag.md)) y **medido**: ~2,2× más lento y ~1,9× más hashes que el cooperativo. El default sigue siendo cooperativo |
 | Condiciones de validación del ganador | ✅ | El NCT recalcula MD5 y verifica la dificultad antes de aceptar la solución |
 | Worker CPU en funcionamiento | ✅ | `Pilar2/P5/worker_cpu.py` |
 | Worker GPU en funcionamiento | ✅ | `worker.py` + `gpu-server.py` + `brute_force_range.cu` |
@@ -153,7 +153,7 @@ Los tests de Python corren sin infraestructura: `tests/conftest.py` inyecta fake
 | N transacciones con M recursos | ✅ | Matriz corrida y guardada en `Pilar2/P5/resultados/` (bulk 30, d4, chunk 25%: M=1 avg 17.7s, M=2 avg 8.3s) |
 | N transacciones con 2×M recursos | ✅ | ídem (M=2 celdas en `c_m2_*`) |
 | Bulks de transacciones (1 → 100.000) | 🟡 | Verificado con 30-50 tx; no se llegó a 100.000 (minado CPU con dificultad >4 se vuelve impracticable en minutos) |
-| Dificultad de prefijo (1 → 8 caracteres) | 🟡 | Barrida 0-5 en las corridas. 6+ descartada: chunk 2.5M no resuelve (~15%/chunk) → loops de 65s |
+| Dificultad de prefijo (1 → 8 caracteres) | ✅ | Barrida 0-6 medida (d6: 10/10 en 37,4s con 4 workers). Las 7 y 8 quedan **calculadas** con la velocidad medida de 904.373 hashes/s: 1,2 min y 20 min por bloque. Ver `resultados/RESUMEN-2026-08-05.md` |
 | Fragmentación del pool (1% → 50%) | ✅ | `TRP_CHUNK_SIZE` parametrizable; barrido 10% vs 25% (5× más rápido el 10%). Docs en `resultados/RESUMEN.md` |
 | Ingreso y egreso de nodos GPU | ✅ | Mecanismo verificado y **medido 2026-08-05**: egreso (parar el heartbeat) → fallback activo en ~45s (TTL Redis 30s + ciclo monitor 15s); ingreso → restaura en ~25-29s. Métricas `trp_gpu_alive` / `trp_fallback_active` (ver `Pilar2/P5/README.md` "Prueba realizada") |
 
