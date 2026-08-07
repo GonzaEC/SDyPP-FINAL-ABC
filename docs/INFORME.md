@@ -11,7 +11,60 @@ completo de [Pilar 2](../Pilar2/P5/). Los datos crudos están en
 
 ---
 
-## 1. Qué se midió, y con qué límites
+## 1. Arquitectura del sistema
+
+El sistema completo es un emisor de entradas donde la blockchain es un servicio
+más, no el centro: la app web firma operaciones con ECDSA en el browser y las
+manda a un nodo coordinador que distribuye el minado entre workers.
+
+### Componentes
+
+| Componente | Tecnología | Rol |
+|---|---|---|
+| Frontend / Backend | Next.js 16 | Eventos y entradas, firma ECDSA P-256 en el browser, compra con MercadoPago, validación en puerta |
+| **NCT** (Nodo Coordinador) | FastAPI | API REST de la blockchain, auto-miner, verificación de firma y de PoW, ownership de tickets |
+| **TrP** (Task Router) | Python | Subdivide el espacio de nonces en chunks, monitorea la GPU, dispara el fallback a CPU |
+| Workers GPU / CPU | CUDA C / Python | Minan: barren un rango de nonces buscando el que satisface la dificultad |
+| Redis | — | Estado autoritativo: blockchain, ownership, locks distribuidos, heartbeats, logs |
+| RabbitMQ | — | Colas de mensajes entre NCT, TrP y workers |
+
+### Diagrama
+
+```
+                         ┌─────────────┐
+                         │  Frontend   │  ←→  Postgres (datos de la app)
+                         │  (Next.js)  │
+                         └──────┬──────┘
+                                │ HTTP /tx/mint | /tx/transfer (firma ECDSA)
+                         ┌──────┴──────┐
+                         │     NCT     │  ←→  Redis (blockchain, ownership, locks, logs)
+                         └──────┬──────┘
+                                │ RabbitMQ [tareas_pool]
+                         ┌──────┴──────┐
+                         │     TrP     │  ←→  Redis (heartbeats GPU)
+                         └──────┬──────┘
+                                │ RabbitMQ [tareas] — chunks disjuntos
+                  ┌──────────────┼──────────────┐
+                  │              │              │
+            ┌─────┴─────┐  ┌────┴─────┐  ┌──────┴─────┐
+            │ Worker GPU │  │   ...    │  │ Worker CPU │
+            │ → CUDA bin │  │          │  │ (hashlib)  │
+            └─────┬─────┘  └────┬─────┘  └──────┬─────┘
+                  └─────────────┼───────────────┘
+                                │ RabbitMQ [soluciones]
+                         ┌──────┴──────┐
+                         │     NCT     │ → verifica MD5 + dificultad → guarda bloque
+                         └─────────────┘
+```
+
+Cómo se conectan las piezas: la app **nunca mina**. Firma operaciones, el NCT las
+valida y encola, el TrP reparte el trabajo de minado, los workers lo ejecutan y
+el NCT verifica el resultado antes de escribir el bloque. El detalle del flujo
+está en §4.1.
+
+---
+
+## 2. Qué se midió, y con qué límites
 
 Dos niveles distintos, que responden preguntas distintas:
 
@@ -42,7 +95,7 @@ enteramente en el nivel micro.
 
 ---
 
-## 2. Nivel micro: GPU vs CPU en el minado puro
+## 3. Nivel micro: GPU vs CPU en el minado puro
 
 Batería de Pilar 1, MD5 con prefijo creciente:
 
@@ -68,9 +121,54 @@ básicamente el overhead. Recién en prefijo 6 el cómputo empieza a dominar.
 
 ---
 
-## 3. Nivel sistema: qué gobierna el time-to-confirm
+## 4. Nivel sistema: qué gobierna el time-to-confirm
 
-### 3.1 Fragmentación del pool vs cantidad de workers
+### 4.1 El pool de transacciones: cómo funciona y cómo escala
+
+El minado no lo hace el NCT: lo reparte. El flujo completo es:
+
+1. La app manda `POST /tx/mint` o `POST /tx/transfer` al NCT, firmado con la
+   clave privada ECDSA del usuario (IEEE P1363 sobre el payload canónico).
+2. El NCT verifica la firma, aplica las validaciones de dominio (p. ej. ownership
+   en un transfer) y encola la transacción en `pending_transactions` (Redis).
+3. El **auto-miner** —un thread de fondo del NCT que corre cada 3 s— detecta
+   transacciones pendientes y publica un task de minado en la cola `tareas_pool`.
+4. El **TrP** consume ese task, divide el espacio de nonces `[0, TOTAL)` en chunks
+   disjuntos de `CHUNK_SIZE = 2.500.000` nonces y publica cada chunk en `tareas`.
+5. Cada **worker** toma un chunk y barre su rango único `[start, end]` —con el
+   binario CUDA si tiene GPU, con `hashlib` si es CPU—. Si encuentra el nonce que
+   satisface la dificultad, publica la solución en `soluciones`.
+6. El **NCT** recalcula el MD5 y verifica la dificultad antes de aceptar la
+   solución. Es la autoridad final: no importa quién reporte, el resultado se
+   valida contra los datos del bloque. Luego guarda el bloque y aplica los
+   efectos de ownership.
+
+### El pool es cooperativo por reparto de rangos disjuntos
+
+El TrP reparte rangos que **no se solapan**: entre todos los workers vivos se
+barre el espacio completo exactamente una vez, y cualquiera de ellos puede
+encontrar el nonce ganador. Eso trae tres propiedades:
+
+- **Sin trabajo duplicado**: el mismo nonce no se prueba dos veces.
+- **Sin coordinación entre workers**: no necesitan acordar quién mina qué; el
+  único coordinador es el TrP.
+- **Idempotencia**: como todos prueban los mismos datos (mismo bloque, misma
+  dificultad), da igual qué rango encuentre el nonce; la verificación del NCT
+  decide.
+
+### Las dos palancas de escalado
+
+El pool escala con dos parámetros, y las mediciones de §4.2 muestran que no son
+equivalentes:
+
+- **Cantidad de workers (M)**: duplicar de M=1 a M=2, con chunks grandes, casi
+  duplicó el throughput (2,13×). Solo rinde si hay chunks pendientes para ocupar
+  a los workers nuevos.
+- **Tamaño del chunk (fragmentación)**: bajar el chunk de 25% a 10% del rango
+  rindió 5,05× —la palanca dominante— porque reduce la latencia de coordinación
+  (cada subtarea termina antes) en vez de sumar cómputo.
+
+### 4.2 Fragmentación del pool vs cantidad de workers
 
 ![Fragmentación](../Pilar2/P5/resultados/graficos/fragmentacion.png)
 
@@ -96,7 +194,7 @@ worker solo alcanza para drenar la cola, y el segundo agrega coordinación —
 distribución de mensajes, contención en el NCT al validar— sin trabajo útil que
 absorber.
 
-### 3.2 Predictibilidad, no solo velocidad
+### 4.3 Predictibilidad, no solo velocidad
 
 ![Distribución](../Pilar2/P5/resultados/graficos/distribucion.png)
 
@@ -109,7 +207,7 @@ Para un sistema de venta de entradas, esa diferencia importa más que el promedi
 Un comprador que espera 5 segundos y otro que espera 30 en la misma tanda es un
 problema de experiencia de usuario aunque el promedio "cierre".
 
-### 3.3 El costo de la dificultad
+### 4.4 El costo de la dificultad
 
 ![Dificultad](../Pilar2/P5/resultados/graficos/dificultad.png)
 
@@ -120,6 +218,7 @@ Escala logarítmica; línea llena es la mediana, punteada el promedio.
 | 2 (`00`) | 3,51 s | 2,90 s | Sin diferencia significativa |
 | 4 (`0000`) | — (sin medir) | 3,36 s | |
 | 5 (`00000`) | 83,59 s | 24,38 s | **3 de 40 transacciones dieron TIMEOUT con M=1** |
+| 6 (`000000`) | — | — | Con 4 workers: **10/10 en 37,4 s** ttc (tras corregir §4.6) |
 
 Dos cosas para leer acá. La primera es la separación entre mediana y promedio en
 dificultad 5 con un worker: 83,59 s contra 251,32 s. Esa brecha de 3× significa
@@ -129,21 +228,38 @@ es.
 
 La segunda es que en esa misma celda **el 8% del lote nunca confirmó**. Con
 dificultad 5 y un solo worker CPU, el sistema no solo se pone lento: empieza a
-fallar. Ese es el techo práctico del minado en CPU, y coincide con lo documentado
-en `RESUMEN.md` sobre dificultad 6, donde directamente no se pudo completar
-ninguna corrida.
+fallar. Era el techo práctico del diseño original; tras corregir los dos defectos
+de §4.6, la dificultad 6 pasó a resolverse (10/10 en 37,4 s con 4 workers) y el
+techo real del minado en CPU quedó recién en las dificultades 7-8, que se dejaron
+**calculadas** con la velocidad medida de 904.373 hashes/s por worker (~1,2 min y
+~20 min por bloque con 4 workers).
 
-### 3.4 Comportamiento a lo largo del lote
+### 4.5 Comportamiento a lo largo del lote y volumen
 
 ![Evolución](../Pilar2/P5/resultados/graficos/evolucion.png)
 
-La función escalón mencionada en §1. Sirve como evidencia visual de que el
+La función escalón mencionada en §2. Sirve como evidencia visual de que el
 sistema agrupa transacciones en bloques y de que el time-to-confirm de una
 transacción depende de en qué bloque le tocó caer, no de su posición en la cola.
 
+**Volumen: 1.000 y 10.000 transacciones.** Para separar el costo del minado del
+costo de la coordinación se midió el volumen con dificultad baja (2 ceros) y
+4 workers:
+
+| Transacciones | Lote | Confirmadas | Tiempo total | ttc promedio | p95 |
+|---|---|---|---|---|---|
+| 1.000 | 100 | **1.000 / 1.000** | 46,4 s | 3,41 s | 3,75 s |
+| 10.000 | 500 | **10.000 / 10.000** | 266,6 s | 6,61 s | 7,39 s |
+
+Multiplicar el volumen por 10 solo duplicó el ttc promedio (3,41 → 6,61 s): lo
+que crece linealmente con el volumen es el **tiempo total**, no la latencia
+individual, porque el sistema agrupa en bloques (las 10.000 transacciones se
+resolvieron en ~27 bloques). El throughput sostenido es de **37,5 tx/s** con cero
+transacciones perdidas.
+
 ---
 
-## 3.5 Dos defectos que las mediciones destaparon
+## 4.6 Dos defectos que las mediciones destaparon
 
 Al intentar subir la dificultad más allá de 5 aparecieron dos problemas que se tapaban
 entre sí. Vale contarlos porque son el ejemplo más claro del trabajo de este pilar: **medir
@@ -181,7 +297,7 @@ la de tareas antes de publicar un intento nuevo— y el efecto, grande:
 **6,3× más rápido y sin transacciones perdidas.** Detalle en
 [`Pilar2/P5/resultados/RESUMEN-2026-08-05.md`](../Pilar2/P5/resultados/RESUMEN-2026-08-05.md).
 
-## 3.6 Los dos protocolos, medidos
+## 4.7 Los dos protocolos, medidos
 
 Con el modo competitivo implementado tras un flag, se corrió la misma matriz en ambos
 (10 tx, dificultad 5, 4 workers, 3 repeticiones):
@@ -206,7 +322,42 @@ Eso confirma con datos propios lo que hasta ahora era solo un argumento: el desp
 modo competitivo compra resistencia a mineros que no confían entre sí, y en un pool de
 workers propios se paga sin obtener nada a cambio.
 
-## 4. Síntesis: los dos niveles juntos
+## 4.8 Resiliencia: fallback GPU→CPU y caída de workers
+
+El sistema no asume que la GPU va a estar siempre. El gpu-server publica un
+heartbeat (`heartbeat:gpu-server`) en Redis cada 10 s con TTL de 30 s, y el TrP
+corre un `monitor_loop` cada 15 s que revisa si la clave sigue viva:
+
+| Fase | Qué se hizo | Tiempo medido |
+|---|---|---|
+| **Ingreso** (GPU vuelve) | Arrancar el emisor de heartbeat | 28,7 s / 25,4 s |
+| **Egreso** (GPU cae) | Parar el emisor → activar fallback CPU | 45,1 s / 45,0 s |
+
+Cuando la GPU cae, el TrP guarda la dificultad vigente, la baja a `"0"` (mucho
+más fácil, para que el worker CPU confirme rápido) y escala el deployment
+`worker-cpu` vía la API de Kubernetes. Cuando vuelve, restaura la dificultad
+original (`"00"`) y baja los workers a 0. La transición es **atómica**: se hace
+con `SET NX` sobre `trp:fallback_active` en Redis, así con varias réplicas de TrP
+solo una ejecuta el cambio.
+
+El egreso es el caso interesante: no lo detecta el TrP al instante, sino cuando
+la clave expira por TTL (30 s) y el siguiente ciclo del monitor lo confirma
+(≤15 s después) — por eso el tiempo medido ronda los 45 s. El ingreso es más
+rápido porque no hay TTL de por medio: alcanza con que el monitor vea la key una
+vez.
+
+También se probó la caída brusca de un worker a mitad del minado (kill del
+contenedor durante una emisión de 10 mints con dificultad 5). Los workers
+consumen con `auto_ack=False` y ack manual: la tarea queda unacked mientras se
+mina, y RabbitMQ **reentrega el mensaje** si la conexión muere. Medido: los
+4 chunks quedaron unacked, al matar el worker pasaron a `ready` en ~2 s, y el
+worker reiniciado los re-minó (redeliver 0→4, los mismos rangos disjuntos, sin
+duplicados). Resultado: **10/10 ops CONFIRMED**, la cadena pasó de 27 a 28
+bloques. Ninguna transacción se perdió.
+
+---
+
+## 5. Síntesis: los dos niveles juntos
 
 Acá está, para nosotros, la conclusión más interesante del trabajo.
 
@@ -234,9 +385,9 @@ está.
 
 ---
 
-## 5. Reflexión crítica
+## 6. Reflexión crítica
 
-### 5.1 Limitaciones de la arquitectura
+### 6.1 Limitaciones de la arquitectura
 
 **El NCT es un punto único de falla.** Concentra la API, el auto-miner, la
 validación y la escritura de la cadena. Tiene 2 réplicas con un lock distribuido
@@ -258,22 +409,28 @@ deployment vía la API in-cluster. Fuera de un cluster —por ejemplo, en el com
 local— falla y solo deja un error en el log. Funciona, pero acopla la lógica de la
 blockchain a su plataforma de despliegue.
 
-**El pool es cooperativo, sin modo competitivo.** El reparto de rangos disjuntos
-es la decisión correcta para workers propios que colaboran, pero implica que el
-sistema no modela la dinámica de una red abierta donde los mineros compiten y no
-confían entre sí.
+**El pool es cooperativo por defecto.** El reparto de rangos disjuntos es la
+decisión correcta para workers propios que colaboran; el modo competitivo existe
+tras un flag y se midió en §4.7, pero solo agrega costo. El sistema no modela la
+dinámica de una red abierta donde los mineros compiten y no confían entre sí.
 
-### 5.2 Limitaciones de la medición
+### 6.2 Limitaciones de la medición
 
 - Una sola corrida por configuración, sin intervalos de confianza.
 - ~2 observaciones independientes reales por corrida, por la confirmación en bloque.
 - Sin datos de GPU a nivel sistema: la comparación GPU vs CPU es solo micro.
-- Rango de dificultad efectivo 2 a 5. El checklist pedía hasta 8; con minado en
-  CPU eso no era alcanzable, y preferimos documentar el techo medido antes que
-  extrapolar.
-- Bulks hasta 50 transacciones, lejos de las 100.000 del enunciado.
+- Dificultad medida en el rango efectivo 2 a 6 (la 6 se alcanzó tras corregir los
+  defectos de §4.6). Las 7 y 8 se dejaron **calculadas** con la velocidad medida
+  de 904.373 hashes/s por worker (~1,2 min y ~20 min por bloque con 4 workers).
+  El checklist pedía hasta 8; con minado en CPU preferimos documentar el techo
+  medido y extrapolar lo que sigue, en lugar de una corrida abandonada por timeout.
+- Bulks medidos hasta **10.000 transacciones** (10.000/10.000 en 266,6 s, a
+  37,5 tx/s sostenidos). Las 100.000 del enunciado no se corrieron: al ritmo
+  medido son ~44 minutos de corrida única, y el throughput ya está caracterizado
+  y estable entre 1.000 y 10.000, así que correrlas agregaría confirmación, no
+  información nueva.
 
-### 5.3 Mejoras propuestas, en orden de impacto esperado
+### 6.3 Mejoras propuestas, en orden de impacto esperado
 
 1. **Chunk adaptativo.** Que el TrP calcule el tamaño en función de los workers
    vivos y la dificultad, en lugar de usar una constante. Es la palanca que
@@ -286,7 +443,7 @@ confían entre sí.
 5. **Modo competitivo detrás de un flag**, que además permitiría comparar los dos
    protocolos con la misma matriz de pruebas.
 
-### 5.4 ¿Dónde aplicaría esta solución en un contexto real?
+### 6.4 ¿Dónde aplicaría esta solución en un contexto real?
 
 Con honestidad: **una blockchain propia con PoW no es la respuesta correcta para
 vender entradas.** El PoW existe para lograr consenso entre partes que no confían
