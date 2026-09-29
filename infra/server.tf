@@ -1,86 +1,96 @@
-# OKE Basic (control plane gratuito, sin SLA — alcanza para el TP).
-resource "oci_containerengine_cluster" "primary" {
-  compartment_id     = var.compartment_ocid
-  name               = var.cluster_name
-  vcn_id             = oci_core_vcn.main.id
-  # Version OKE actualizable con `oci ce cluster-options get --cluster-option-id all`.
-  # v1.33.x es la default estable de OKE a 2026-09.
-  kubernetes_version = "v1.34.10"
-  type               = "BASIC_CLUSTER"
+# Un solo VPS que hostea todo el cluster k3s.
+# Es la topologia real del deploy productivo — ver ADR-029.
 
-  cluster_pod_network_options {
-    cni_type = "OCI_VCN_IP_NATIVE"
+resource "hcloud_ssh_key" "main" {
+  name       = "${var.server_name}-key"
+  public_key = var.ssh_public_key
+}
+
+# Firewall que expone solo los puertos que consumen las apps y el API de k3s.
+# Todo el resto queda cerrado desde internet (los pods se hablan por la red
+# interna de k3s, sin pasar por el firewall externo).
+resource "hcloud_firewall" "main" {
+  name = "${var.server_name}-fw"
+
+  # SSH (bootstrap + operacion)
+  rule {
+    direction  = "in"
+    protocol   = "tcp"
+    port       = "22"
+    source_ips = ["0.0.0.0/0", "::/0"]
   }
 
-  endpoint_config {
-    subnet_id            = oci_core_subnet.api.id
-    is_public_ip_enabled = true
+  # Kubernetes API (kubectl desde fuera del cluster)
+  rule {
+    direction  = "in"
+    protocol   = "tcp"
+    port       = "6443"
+    source_ips = ["0.0.0.0/0", "::/0"]
   }
 
-  options {
-    service_lb_subnet_ids = [oci_core_subnet.lb.id]
-    kubernetes_network_config {
-      pods_cidr     = "10.244.0.0/16"
-      services_cidr = "10.96.0.0/16"
-    }
+  # HTTP (Traefik built-in de k3s; redirige a HTTPS)
+  rule {
+    direction  = "in"
+    protocol   = "tcp"
+    port       = "80"
+    source_ips = ["0.0.0.0/0", "::/0"]
+  }
+
+  # HTTPS (Traefik built-in de k3s)
+  rule {
+    direction  = "in"
+    protocol   = "tcp"
+    port       = "443"
+    source_ips = ["0.0.0.0/0", "::/0"]
+  }
+
+  # AMQPS - RabbitMQ (workers GPU del cluster del profesor se conectan aca)
+  rule {
+    direction  = "in"
+    protocol   = "tcp"
+    port       = "5671"
+    source_ips = ["0.0.0.0/0", "::/0"]
+  }
+
+  # Redis (workers GPU del cluster del profesor se conectan aca)
+  rule {
+    direction  = "in"
+    protocol   = "tcp"
+    port       = "6379"
+    source_ips = ["0.0.0.0/0", "::/0"]
   }
 }
 
-# Always Free ARM Ampere A1 Flex: hasta 4 OCPU + 24 GB RAM total en la tenancy.
-# Los repartimos en 4 nodos de 1 OCPU / 6 GB cada uno.
-# Nota: OKE Always Free NO admite multiples node pools independientes con
-# scale-to-zero como GKE/AKS; se hace un solo node pool y la separacion
-# apps/infra/monitoring queda impuesta por node labels + taints aplicados a los
-# nodos individuales via kubectl tras el bootstrap (ver k8s/README.md).
+resource "hcloud_server" "cluster" {
+  name         = var.server_name
+  server_type  = var.server_type
+  image        = var.image
+  location     = var.location
+  ssh_keys     = [hcloud_ssh_key.main.id]
+  firewall_ids = [hcloud_firewall.main.id]
 
-data "oci_identity_availability_domains" "ads" {
-  compartment_id = var.tenancy_ocid
-}
+  # cloud-init: instala k3s al boot y etiqueta el nodo con pool=apps.
+  # Idempotente; si el server se recrea, k3s se instala de nuevo desde cero.
+  user_data = <<-EOF
+    #!/bin/bash
+    set -eux
 
-data "oci_core_images" "oracle_linux" {
-  compartment_id           = var.compartment_ocid
-  operating_system         = "Oracle Linux"
-  operating_system_version = "8"
-  shape                    = "VM.Standard.A1.Flex"
-  sort_by                  = "TIMECREATED"
-  sort_order               = "DESC"
-}
+    # Instalar k3s (single-node; sin componentes deshabilitados — Traefik
+    # built-in queda como ingress controller).
+    curl -sfL https://get.k3s.io | sh -
 
-resource "oci_containerengine_node_pool" "workers" {
-  compartment_id     = var.compartment_ocid
-  cluster_id         = oci_containerengine_cluster.primary.id
-  name               = "workers"
-  kubernetes_version = "v1.34.10"
+    # Etiquetar el nodo con pool=apps para que los nodeSelector de los
+    # manifests encuentren donde programar. Ver k8s/README.md.
+    until kubectl get nodes 2>/dev/null | grep -q Ready; do sleep 2; done
+    NODE=$(kubectl get nodes -o jsonpath='{.items[0].metadata.name}')
+    kubectl label node "$NODE" pool=apps --overwrite
 
-  node_shape = "VM.Standard.A1.Flex"
-  node_shape_config {
-    ocpus         = 1 # Minimo: 1 nodo x 1 OCPU / 6 GB. Ultima chance de encontrar slot en Santiago.
-    memory_in_gbs = 6
+    # Namespace de la app
+    kubectl create namespace sdypp --dry-run=client -o yaml | kubectl apply -f -
+  EOF
+
+  labels = {
+    project = "sdypp"
+    stack   = "k3s"
   }
-
-  node_source_details {
-    source_type             = "IMAGE"
-    image_id                = data.oci_core_images.oracle_linux.images[0].id
-    boot_volume_size_in_gbs = 50
-  }
-
-  node_config_details {
-    size = 1 # Un solo nodo — request minima para pillar cualquier slot fragmentado.
-    # Escalar despues si hay cupo: oci ce node-pool update --node-pool-id <id> --size N
-
-    dynamic "placement_configs" {
-      for_each = data.oci_identity_availability_domains.ads.availability_domains
-      content {
-        availability_domain = placement_configs.value.name
-        subnet_id           = oci_core_subnet.nodes.id
-      }
-    }
-
-    node_pool_pod_network_option_details {
-      cni_type       = "OCI_VCN_IP_NATIVE"
-      pod_subnet_ids = [oci_core_subnet.nodes.id]
-    }
-  }
-
-  ssh_public_key = var.ssh_public_key
 }

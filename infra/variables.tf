@@ -1,52 +1,40 @@
-variable "tenancy_ocid" {
-  description = "OCID de la tenancy (Profile > Tenancy en la consola)"
+variable "hcloud_token" {
+  description = "Hetzner Cloud API token (Project > Security > API Tokens > Read & Write)"
   type        = string
+  sensitive   = true
 }
 
-variable "user_ocid" {
-  description = "OCID del usuario que corre Terraform (Profile > User Settings)"
-  type        = string
-}
-
-variable "fingerprint" {
-  description = "Fingerprint de la API key publica cargada en el usuario"
-  type        = string
-}
-
-variable "private_key_path" {
-  description = "Path local al archivo .pem de la private key correspondiente al fingerprint"
-  type        = string
-}
-
-variable "region" {
-  description = "Region de OCI (home region de la tenancy)"
-  type        = string
-  default     = "sa-santiago-1"
-}
-
-variable "compartment_ocid" {
-  description = "OCID del compartment donde crear los recursos (puede ser el root de la tenancy)"
-  type        = string
-}
-
-variable "cluster_name" {
-  description = "Nombre del cluster OKE"
+variable "server_name" {
+  description = "Nombre del server / cluster k3s"
   type        = string
   default     = "sdypp-cluster"
 }
 
-variable "ocir_namespace" {
-  description = "Namespace de OCIR (autogenerado por Oracle, usualmente coincide con el tenancy name en minusculas). Sacalo con: oci os ns get"
+variable "server_type" {
+  description = "Tipo de VPS (cpx22 = 2vCPU/4GB, cpx32 = 4vCPU/8GB, cpx42 = 8vCPU/16GB)"
   type        = string
+  default     = "cpx32"
+}
+
+variable "location" {
+  description = "Location Hetzner (nbg1 = Nuremberg, fsn1 = Falkenstein, hel1 = Helsinki, ash = Ashburn US, hil = Hillsboro US)"
+  type        = string
+  default     = "nbg1"
+}
+
+variable "image" {
+  description = "OS image"
+  type        = string
+  default     = "ubuntu-24.04"
 }
 
 variable "ssh_public_key" {
-  description = "SSH public key content (pega el contenido del ~/.ssh/id_rsa.pub o generalo con ssh-keygen)"
+  description = "SSH public key content (ssh-rsa ...) para acceso al server"
   type        = string
 }
 
-variable "github_repo" {
-  description = "Repo GitHub owner/name (informativo)"
+variable "domain" {
+  description = "Dominio que apunta al server (informativo; el DNS se configura fuera de Terraform)"
   type        = string
-  default     = "GonzaEC/SDyPP-FINAL-ABC"
+  default     = "tesera.tech"
 }

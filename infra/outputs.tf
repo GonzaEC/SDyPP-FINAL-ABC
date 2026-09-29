@@ -1,29 +1,27 @@
-output "cluster_id" {
-  value = oci_containerengine_cluster.primary.id
+output "server_ipv4" {
+  description = "IP publica IPv4 del VPS Hetzner. Apuntar el A record del dominio aca."
+  value       = hcloud_server.cluster.ipv4_address
 }
 
-output "cluster_name" {
-  value = oci_containerengine_cluster.primary.name
+output "server_ipv6" {
+  description = "IP publica IPv6 del VPS Hetzner."
+  value       = hcloud_server.cluster.ipv6_address
 }
 
-output "cluster_endpoint" {
-  value     = oci_containerengine_cluster.primary.endpoints[0].public_endpoint
-  sensitive = true
+output "server_name" {
+  value = hcloud_server.cluster.name
 }
 
-output "region" {
-  value = var.region
+output "server_status" {
+  value = hcloud_server.cluster.status
 }
 
-output "ocir_registry" {
-  description = "URL del OCIR para pushear imagenes"
-  value       = "${var.region == "sa-santiago-1" ? "scl" : var.region}.ocir.io/${var.ocir_namespace}"
+output "ssh_connect_hint" {
+  description = "Comando SSH sugerido (con la key generada localmente)."
+  value       = "ssh -i ~/.ssh/oke_nodes root@${hcloud_server.cluster.ipv4_address}"
 }
 
-output "vcn_id" {
-  value = oci_core_vcn.main.id
-}
-
-output "node_pool_id" {
-  value = oci_containerengine_node_pool.workers.id
+output "kubeconfig_hint" {
+  description = "Comando para bajar el kubeconfig una vez el server termino de bootear."
+  value       = "ssh -i ~/.ssh/oke_nodes root@${hcloud_server.cluster.ipv4_address} 'cat /etc/rancher/k3s/k3s.yaml' | sed 's|127.0.0.1|${hcloud_server.cluster.ipv4_address}|' > ~/.kube/config-hetzner"
 }

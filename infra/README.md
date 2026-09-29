@@ -1,130 +1,109 @@
-# Infraestructura — Terraform/OpenTofu en Oracle Cloud
+# Infraestructura — Terraform/OpenTofu contra Hetzner Cloud
 
-Definición declarativa de toda la infraestructura en OCI (Oracle Cloud
-Infrastructure), usando el tier **Always Free**. Se ejecuta automáticamente vía
-Pipeline 1 (GitHub Actions) en cada push a `infra/`.
-
-## Por qué Oracle Cloud Always Free
-
-- **4 OCPU ARM Ampere A1 + 24 GB RAM** always free, sin límite temporal.
-- **OKE (Oracle Kubernetes Engine)** control plane gratis en tier Basic.
-- **OCIR** (Container Registry) gratis, unlimited pulls dentro de la tenancy.
-- **2 flex load balancers** always free (uno para el ingress, otro para
-  RabbitMQ/Redis externos).
-- **200 GB block storage** always free.
-- No hay $100 que se acabe; el cluster puede quedar prendido meses.
+IaC declarativa del cluster productivo: un VPS Hetzner Cloud con k3s single-node
+que se auto-configura al boot via cloud-init. Ejecutable con `tofu apply` desde
+local o a traves de Pipeline 1.
 
 ## Recursos provisionados
 
-### Red
-- **VCN** `sdypp-vcn`: `10.0.0.0/16`.
-- **Subnet API** `sdypp-api-subnet` (`10.0.0.0/28`, pública): endpoint del K8s API.
-- **Subnet nodes** `sdypp-nodes-subnet` (`10.0.10.0/24`, privada + NAT):
-  worker nodes; salen por NAT gateway y acceden a servicios OCI por Service Gateway.
-- **Subnet LB** `sdypp-lb-subnet` (`10.0.20.0/24`, pública): Service type=LoadBalancer.
-- Internet Gateway, NAT Gateway, Service Gateway, 2 Route Tables, 2 Security Lists
-  (una para nodes, otra para LB con reglas HTTP/HTTPS/AMQPS/Redis).
+| Recurso | Descripcion |
+|---|---|
+| `hcloud_ssh_key.main` | Sube la clave SSH publica al proyecto de Hetzner. |
+| `hcloud_firewall.main` | Firewall de perimetro. Solo abre: 22 (SSH), 6443 (k8s API), 80 (HTTP), 443 (HTTPS), 5671 (AMQPS RabbitMQ), 6379 (Redis). |
+| `hcloud_server.cluster` | El VPS (default: `cpx32` en `nbg1`, Ubuntu 24.04). Al bootear ejecuta `cloud-init` que instala k3s, etiqueta el nodo con `pool=apps` y crea el namespace `sdypp`. |
 
-### OKE Cluster
-- **Cluster** `sdypp-cluster`, tier Basic, endpoint público.
-- **Kubernetes 1.31.1**, CNI `OCI_VCN_IP_NATIVE` (pods obtienen IPs de la VCN,
-  no NAT interno).
-- **Node pool `workers`**: 4 nodos `VM.Standard.A1.Flex` (ARM Ampere), 1 OCPU
-  y 6 GB RAM cada uno. Total: **4 OCPU / 24 GB** — el máximo de Always Free.
-- Boot volume 50 GB por nodo.
-- OS: Oracle Linux 8 (última imagen ARM).
-
-### La arquitectura de 3 pools se comprime a labels/taints manuales
-
-OKE Always Free no admite múltiples node pools independientes con scale-to-zero
-(hay un solo node pool de 4 nodos ARM). Reproducimos la separación aplicando
-labels + taints a nodos individuales tras el bootstrap (ver `k8s/README.md`
-sección "Bootstrap manual de labels/taints"):
-
-- **2 nodos** con `pool=apps` + taint `apps=true:NoSchedule` → frontend, NCT, TrP, worker-cpu, Postgres.
-- **1 nodo** con `pool=infra` (sin taint) → Redis, RabbitMQ; también acoge los
-  addons de kube-system (CoreDNS, etc.).
-- **1 nodo** con `pool=monitoring` + taint `monitoring=true:NoSchedule` → stack LGTM.
-
-### IAM
-- **Dynamic Group** `sdypp-oke-nodes`: identifica los worker nodes del cluster.
-- **Policy** `sdypp-oke-ocir-pull`: permite a la dynamic group leer OCIR
-  (equivalente al AcrPull de Azure / artifactregistry.reader de GCP).
-
-### OCIR
-No se declara como resource: OCIR es tenancy-wide. La primera vez que hacés
-`docker push scl.ocir.io/<namespace>/<repo>` se autoprovisiona el repo.
+**Arquitectura**: un solo servidor que corre k3s con Traefik built-in como
+ingress controller. Todo el stack (frontend, NCT, TrP, workers, Postgres,
+Redis, RabbitMQ, LGTM) queda en el mismo nodo. Los servicios que necesitan
+exponerse (Ingress HTTPS, Redis y RabbitMQ para los workers GPU del profe)
+salen por los puertos abiertos en el firewall.
 
 ## Archivos
 
 | Archivo | Contenido |
-|---------|-----------|
-| `providers.tf` | Provider `oracle/oci ~> 6.0` |
-| `backend.tf` | State local (commiteado con concurrency lock del pipeline) |
-| `variables.tf` | Variables (tenancy, user, fingerprint, region, compartment, OCIR namespace, SSH key) |
-| `terraform.tfvars.example` | Ejemplo de valores |
-| `networking.tf` | VCN + 3 subnets + gateways + route tables + security lists |
-| `oke.tf` | Cluster OKE + node pool ARM Always Free |
-| `iam.tf` | Dynamic Group + Policy para OCIR pull |
-| `outputs.tf` | Outputs (cluster ID, endpoint, OCIR path, region) |
+|---|---|
+| `providers.tf` | Provider `hetznercloud/hcloud ~> 1.48` |
+| `backend.tf` | State local (para CI/CD colaborativo migrar a Hetzner Object Storage) |
+| `variables.tf` | hcloud_token, server_name, server_type, location, image, ssh_public_key, domain |
+| `terraform.tfvars.example` | Ejemplo de valores para copiar y editar |
+| `server.tf` | Server + firewall + SSH key + cloud-init de bootstrap de k3s |
+| `outputs.tf` | IPv4/IPv6 publicas + hints para SSH y kubeconfig |
 
-## Bootstrap (una sola vez, previo al primer `tofu apply`)
+## Bootstrap (una sola vez)
 
-### 1. Crear API Key en OCI Console
-- Consola OCI → **Profile → User Settings → API Keys → Add API Key**
-- Elegir "Generate API Key Pair" → descargar la private key `.pem`
-- Guardarla en `~/.oci/oci_api_key.pem` (Windows: `%USERPROFILE%\.oci\oci_api_key.pem`)
-- Copiar el **fingerprint** que muestra la consola.
+### 1. Obtener API token de Hetzner
+Consola Hetzner Cloud → tu proyecto → `Security` → `API Tokens` → **Generate API Token**
+con permisos `Read & Write`. Copiar (se muestra una sola vez).
 
-### 2. Obtener OCIDs y namespace
-- **Tenancy OCID**: Profile → Tenancy → OCID
-- **User OCID**: Profile → User Settings → OCID
-- **Compartment OCID**: en el root podés usar `tenancy_ocid` mismo, o crear un
-  compartment nuevo (Governance → Compartments → Create).
-- **OCIR namespace** (autogenerado por Oracle):
-  ```bash
-  oci os ns get
-  ```
-
-### 3. Generar SSH key para acceso a nodos (opcional pero requerido por OKE)
-```bash
-ssh-keygen -t rsa -b 4096 -f ~/.ssh/oke_nodes -N ""
+### 2. Generar SSH keypair (o reusar `oke_nodes`)
+```powershell
+ssh-keygen -t rsa -b 4096 -f "$HOME\.ssh\oke_nodes" -N '""'
 ```
-El contenido de `~/.ssh/oke_nodes.pub` va en `ssh_public_key` de tfvars.
 
-## Cómo aplicar manualmente
-
+### 3. Crear `terraform.tfvars`
 ```bash
 cd infra
 cp terraform.tfvars.example terraform.tfvars
-# editar terraform.tfvars con los OCIDs y paths
+```
+
+Editar con el token y el contenido de `~/.ssh/oke_nodes.pub`.
+
+## Aplicar
+
+```bash
+cd infra
 tofu init
 tofu plan -out=plan.tfplan
 tofu apply plan.tfplan
 ```
 
-En producción, esto lo hace Pipeline 1 automáticamente vía OCI CLI + API key
-guardada como secret.
+Tarda ~30-60 seg (crea el firewall, la key y el server). El `cloud-init` de
+k3s puede tardar 1-2 min mas en terminar dentro del server. Chequeo:
 
-## Secrets a cargar en el repo tras el primer apply
+```bash
+ssh -i ~/.ssh/oke_nodes root@$(tofu output -raw server_ipv4) 'kubectl get nodes'
+```
 
-| Secret | De dónde sale |
-|--------|---------------|
-| `OCI_TENANCY_OCID` | Profile → Tenancy |
-| `OCI_USER_OCID` | Profile → User Settings |
-| `OCI_FINGERPRINT` | Del API Key generado |
-| `OCI_PRIVATE_KEY` | Contenido del `.pem` (multiline, sin passphrase) |
-| `OCI_REGION` | `sa-santiago-1` (o la home region que hayas elegido) |
-| `OCI_COMPARTMENT_OCID` | El compartment donde vive el cluster |
-| `OCIR_NAMESPACE` | Output de `oci os ns get` |
-| `OCIR_REGISTRY` | `scl.ocir.io` para Santiago, `gru.ocir.io` para São Paulo |
-| `OCIR_USERNAME` | El email de tu cuenta OCI |
-| `OCIR_AUTH_TOKEN` | Profile → Auth Tokens → Generate Token (para docker login) |
-| `OKE_CLUSTER_ID` | `tofu output cluster_id` |
+Cuando el nodo aparezca `Ready`, bajar el kubeconfig:
+
+```bash
+tofu output -raw kubeconfig_hint | sh
+export KUBECONFIG=~/.kube/config-hetzner
+kubectl get nodes
+```
+
+## Secrets a cargar en GitHub tras el primer apply
+
+Para que los pipelines corran:
+
+| Secret | Valor |
+|---|---|
+| `HCLOUD_TOKEN` | El API token de Hetzner |
 | `SSH_PUBLIC_KEY` | Contenido de `~/.ssh/oke_nodes.pub` |
+| `KUBE_CONFIG_HETZNER` | `cat ~/.kube/config-hetzner \| base64 -w0` |
+| `DOCKERHUB_USERNAME` | `gonzaec` |
+| `DOCKERHUB_TOKEN` | PAT de Docker Hub con permisos `Read, Write, Delete` |
+
+Ver `.github/workflows/README.md` para la lista completa (incluye los secrets
+de la app: MP, Cloudinary, RabbitMQ TLS).
 
 ## Costos
 
-**Cero**, mientras te quedes dentro de Always Free. Los recursos "AF" no se
-pueden escalar fuera del tier gratuito ni por accidente — Oracle rechaza
-el request en vez de cobrar.
+CPX32 en Nuremberg: **~€7.05/mes** (~$0.01/hora prorrateado). El server se
+puede apagar sin destruirlo desde el dashboard de Hetzner (siguen los cobros
+del disco), o destruir por completo con `tofu destroy` (pierde el state,
+los PVCs y las imagenes locales de k3s).
+
+## Diferencia vs la arquitectura declarada en el TP
+
+Los ADRs 019-024 y el checklist §3 describen un cluster Kubernetes con **3
+node pools** (`apps`, `infra`, `monitoring`) con taints y tolerations
+imponiendo la separacion de cargas. En un VPS Hetzner single-node esa
+separacion es fisica imposible; la mantenemos declarada en los YAMLs (labels
+y taints en los manifests, comentarios en el codigo) como intencion
+arquitectonica, y la explicamos en [ADR-029](../app/docs/adr/029-deploy-iteracion-gcp-oci-hetzner.md).
+
+Para una re-provision con multiples nodos alcanza con cambiar el server_type
+a algo mas grande o mover a un k3s multi-node (agregando `hcloud_server`
+extras y configurando el `K3S_TOKEN`). Los manifests actuales seguirian
+funcionando.
