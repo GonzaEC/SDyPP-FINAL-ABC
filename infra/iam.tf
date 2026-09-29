@@ -1,21 +1,20 @@
-# Service account for GKE workloads
-resource "google_service_account" "gke_workloads" {
-  account_id   = "gke-workloads"
-  display_name = "GKE Workloads SA"
+# Dynamic Group: identifica a los worker nodes del OKE para poder darles
+# permisos (equivalente al kubelet identity de AKS).
+resource "oci_identity_dynamic_group" "oke_nodes" {
+  compartment_id = var.tenancy_ocid
+  name           = "sdypp-oke-nodes"
+  description    = "Worker nodes del OKE sdypp-cluster"
+  matching_rule  = "ALL {instance.compartment.id = '${var.compartment_ocid}'}"
 }
 
-# Allow GKE nodes to pull images from Artifact Registry
-resource "google_project_iam_member" "gke_ar_reader" {
-  project = var.project_id
-  role    = "roles/artifactregistry.reader"
-  member  = "serviceAccount:${google_service_account.gke_workloads.email}"
-}
-
-# Workload Identity binding: K8s SA → GCP SA
-resource "google_service_account_iam_member" "workload_identity" {
-  service_account_id = google_service_account.gke_workloads.name
-  role               = "roles/iam.workloadIdentityUser"
-  member             = "serviceAccount:${var.project_id}.svc.id.goog[default/default]"
-
-  depends_on = [google_container_cluster.primary]
+# Policy que permite a los nodos leer imagenes del OCIR. OCIR (Oracle Container
+# Registry) es tenancy-wide, no hay que crear un resource — solo autorizar el
+# pull desde el compartment de nodos.
+resource "oci_identity_policy" "oke_ocir_pull" {
+  compartment_id = var.tenancy_ocid
+  name           = "sdypp-oke-ocir-pull"
+  description    = "Permite a los worker nodes pullear imagenes del OCIR"
+  statements = [
+    "Allow dynamic-group ${oci_identity_dynamic_group.oke_nodes.name} to read repos in tenancy",
+  ]
 }

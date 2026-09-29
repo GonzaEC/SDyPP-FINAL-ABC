@@ -1,4 +1,4 @@
-name: "Pipeline 1 - Infraestructura GKE"
+name: "Pipeline 1 - Infraestructura OKE"
 
 on:
   push:
@@ -7,7 +7,6 @@ on:
   workflow_dispatch:
 
 permissions:
-  id-token: write
   contents: read
 
 jobs:
@@ -24,29 +23,37 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - uses: google-github-actions/auth@v2
+      - name: Setup OCI CLI
+        uses: oracle-actions/configure-oci-cli@v1.3.2
         with:
-          workload_identity_provider: ${{ secrets.GCP_WIF_PROVIDER }}
-          service_account: ${{ secrets.GCP_WIF_SERVICE_ACCOUNT }}
+          user: ${{ secrets.OCI_USER_OCID }}
+          tenancy: ${{ secrets.OCI_TENANCY_OCID }}
+          fingerprint: ${{ secrets.OCI_FINGERPRINT }}
+          privateKey: ${{ secrets.OCI_PRIVATE_KEY }}
+          region: ${{ secrets.OCI_REGION }}
+
+      - name: Write private key for Terraform
+        run: |
+          mkdir -p ~/.oci
+          echo "${{ secrets.OCI_PRIVATE_KEY }}" > ~/.oci/oci_api_key.pem
+          chmod 600 ~/.oci/oci_api_key.pem
 
       - uses: opentofu/setup-opentofu@v1
 
       - name: Init
         run: tofu init
 
-      - name: Import existing resources
-        run: |
-          tofu import -var="project_id=${{ secrets.GCP_PROJECT_ID }}" \
-            google_artifact_registry_repository.docker \
-            "projects/${{ secrets.GCP_PROJECT_ID }}/locations/us-central1/repositories/sdypp" \
-            || true
-          tofu import -var="project_id=${{ secrets.GCP_PROJECT_ID }}" \
-            google_container_node_pool.infra \
-            "projects/${{ secrets.GCP_PROJECT_ID }}/locations/us-central1-a/clusters/sdypp-cluster/nodePools/infra" \
-            || true
-
       - name: Plan
-        run: tofu plan -var="project_id=${{ secrets.GCP_PROJECT_ID }}" -out=plan.tfplan
+        env:
+          TF_VAR_tenancy_ocid: ${{ secrets.OCI_TENANCY_OCID }}
+          TF_VAR_user_ocid: ${{ secrets.OCI_USER_OCID }}
+          TF_VAR_fingerprint: ${{ secrets.OCI_FINGERPRINT }}
+          TF_VAR_private_key_path: /home/runner/.oci/oci_api_key.pem
+          TF_VAR_region: ${{ secrets.OCI_REGION }}
+          TF_VAR_compartment_ocid: ${{ secrets.OCI_COMPARTMENT_OCID }}
+          TF_VAR_ocir_namespace: ${{ secrets.OCIR_NAMESPACE }}
+          TF_VAR_ssh_public_key: ${{ secrets.SSH_PUBLIC_KEY }}
+        run: tofu plan -out=plan.tfplan
 
       - name: Apply
         run: tofu apply plan.tfplan

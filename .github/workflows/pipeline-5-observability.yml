@@ -1,10 +1,12 @@
 name: "Pipeline 5 - Observabilidad"
 
 # Despliega el stack de observabilidad (Prometheus, Grafana, Loki, Tempo, Alloy,
-# Alertmanager, exporters) al cluster GKE. Corre al cambiar sus manifests o a mano.
+# Alertmanager, exporters) al cluster OKE.
 #
-# Requisito: el node pool `monitoring` debe existir (lo crea Pipeline 1 / OpenTofu
-# al aplicar infra/gke.tf). Sin ese pool, los pods quedan Pending por el taint.
+# Requisito: el nodo etiquetado `pool=monitoring` debe existir y estar tainteado.
+# En OKE Always Free tenemos un unico node pool de 4 nodos; el bootstrap manual
+# (documentado en k8s/README.md) etiqueta un nodo como monitoring y le agrega
+# el taint monitoring=true:NoSchedule.
 on:
   workflow_dispatch:
   push:
@@ -12,15 +14,11 @@ on:
     paths:
       - "k8s/gke/observability/**"
       - ".github/workflows/pipeline-5-observability.yml"
-  # Tras Pipeline 1 (crea/actualiza el node pool `monitoring`): así el stack se
-  # despliega recién cuando el pool ya existe, evitando pods Pending y el timeout
-  # del rollout. El `if` del job filtra a que Pipeline 1 haya terminado OK.
   workflow_run:
-    workflows: ["Pipeline 1 - Infraestructura GKE"]
+    workflows: ["Pipeline 1 - Infraestructura OKE"]
     types: [completed]
 
 permissions:
-  id-token: write
   contents: read
 
 jobs:
@@ -30,45 +28,44 @@ jobs:
   deploy-observability:
     name: Deploy stack LGTM
     needs: gitleaks
-    # En push/manual procede siempre; cuando lo dispara Pipeline 1, solo si ese
-    # terminó con éxito (no tiene sentido desplegar el stack si falló la infra).
     if: ${{ github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success' }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
 
-      - uses: google-github-actions/auth@v2
+      - name: Setup OCI CLI
+        uses: oracle-actions/configure-oci-cli@v1.3.2
         with:
-          workload_identity_provider: ${{ secrets.GCP_WIF_PROVIDER }}
-          service_account: ${{ secrets.GCP_WIF_SERVICE_ACCOUNT }}
+          user: ${{ secrets.OCI_USER_OCID }}
+          tenancy: ${{ secrets.OCI_TENANCY_OCID }}
+          fingerprint: ${{ secrets.OCI_FINGERPRINT }}
+          privateKey: ${{ secrets.OCI_PRIVATE_KEY }}
+          region: ${{ secrets.OCI_REGION }}
 
-      - uses: google-github-actions/get-gke-credentials@v2
-        with:
-          cluster_name: sdypp-cluster
-          location: us-central1-a
+      - name: Bajar kubeconfig del OKE
+        run: |
+          mkdir -p ~/.kube
+          oci ce cluster create-kubeconfig \
+            --cluster-id ${{ secrets.OKE_CLUSTER_ID }} \
+            --file ~/.kube/config \
+            --region ${{ secrets.OCI_REGION }} \
+            --token-version 2.0.0 \
+            --kube-endpoint PUBLIC_ENDPOINT
 
-      # Espera a que el node pool `monitoring` tenga un nodo Ready antes de
-      # desplegar. Sin esto, si esta corrida arranca en paralelo con Pipeline 1
-      # (que crea el pool y tarda varios minutos), todos los pods del stack
-      # quedan Pending por el taint/nodeSelector y el rollout timeoutea.
-      # Espera hasta ~10 min; si el pool nunca aparece, falla con mensaje claro.
-      - name: Esperar node pool monitoring
+      - name: Verificar que hay un nodo monitoring
         run: |
           for i in $(seq 1 40); do
             ready=$(kubectl get nodes -l pool=monitoring --no-headers 2>/dev/null | grep -c " Ready ") || ready=0
             if [ "$ready" -ge 1 ]; then
-              echo "node pool 'monitoring' con $ready nodo(s) Ready."
+              echo "$ready nodo(s) 'pool=monitoring' Ready."
               exit 0
             fi
-            echo "Esperando node pool 'monitoring'... ($i/40)"
+            echo "Esperando nodo 'pool=monitoring'... ($i/40)"
             sleep 15
           done
-          echo "::error::El node pool 'monitoring' no apareció. Corré primero Pipeline 1 (crea el pool con infra/gke.tf)."
+          echo "::error::Ningun nodo con label pool=monitoring. Correr el bootstrap manual de labels/taints (ver k8s/README.md)."
           exit 1
 
-      # Namespace y RBAC primero: el resto de los recursos viven en el ns
-      # `observability` y kubectl apply -f <dir> ordena por nombre de archivo,
-      # así que sin esto algunos objetos se aplicarían antes de existir el ns.
       - name: Namespace + RBAC
         run: |
           kubectl apply -f k8s/gke/observability/namespace.yaml
@@ -79,7 +76,5 @@ jobs:
 
       - name: Esperar rollout de Grafana/Prometheus
         run: |
-          # 300s: la primera vez los nodos del pool monitoring tienen que bajar
-          # las imágenes (Prometheus/Grafana/Loki/Tempo), que no son chicas.
           kubectl -n observability rollout status deploy/prometheus --timeout=300s
           kubectl -n observability rollout status deploy/grafana --timeout=300s
