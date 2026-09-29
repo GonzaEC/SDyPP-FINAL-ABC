@@ -41,10 +41,10 @@ criptográfico único en una blockchain propia con Proof of Work.
 ```
 
 El cluster propio corre en **un único VPS de Hetzner Cloud** (CPX32, 4 vCPU / 8 GB,
-Nuremberg) con **k3s single-node**. La separación en pools lógicos (`apps`, `infra`,
-`monitoring`) que documenta el TP y que está impuesta en `infra/oke.tf` y en los taints
-de los manifests **se colapsa a un solo nodo etiquetado `pool=apps`** en este deploy —
-ver [ADR-029](app/docs/adr/029-deploy-iteracion-gcp-oci-hetzner.md) para el racional.
+Nuremberg) con **k3s single-node**, provisionado declarativamente en [`infra/`](infra/).
+La separación en pools lógicos (`apps`, `infra`, `monitoring`) que documenta el TP se
+colapsa a un solo nodo etiquetado `pool=apps` — ver
+[ADR-029](app/docs/adr/029-deploy-iteracion-gcp-oci-hetzner.md) para el racional.
 
 ## Los tres pilares
 
@@ -81,7 +81,7 @@ validar tickets on-chain.
 | Base de datos | PostgreSQL 17 + Prisma 7 |
 | Blockchain | Python (FastAPI), Redis, RabbitMQ |
 | Minería GPU | CUDA C (compilado), workers Python |
-| Infraestructura declarativa | Terraform/OpenTofu (código para Oracle Cloud OKE — no aplicado, ver ADR-029) |
+| Infraestructura declarativa | Terraform/OpenTofu (provider `hetznercloud/hcloud`) |
 | Deploy en producción | VPS Hetzner Cloud + k3s single-node |
 | Observabilidad | Prometheus, Grafana, Loki, Tempo, Alloy, Alertmanager |
 | CI/CD | GitHub Actions (5 pipelines) |
@@ -104,9 +104,9 @@ reproducir el deploy Hetzner". Resumen:
 6. Instalar `cert-manager` por Helm; aplicar el ClusterIssuer y el Ingress (Traefik ya viene con k3s).
 7. Apuntar el DNS de `tesera.tech` al IP del VPS.
 
-El código `infra/*.tf` está escrito contra el provider `oci` (Oracle Cloud OKE) y **no
-se ejecuta en el deploy actual** — queda como evidencia de IaC declarativo. Los pipelines
-de GitHub Actions también apuntan a OCI y no se corrieron para esta versión productiva.
+El código `infra/*.tf` provisiona el VPS Hetzner con `cloud-init` que instala k3s al boot
+— un `tofu apply` completo reprovisiona el cluster desde cero. Los 5 pipelines de GitHub
+Actions cubren el flujo end-to-end (Terraform + build de imágenes + deploy + observabilidad).
 
 ## Cómo correr localmente
 
@@ -146,7 +146,7 @@ Cada parte del sistema tiene su propio README. Índice:
 | **Pilar 1 — GPU/CUDA** | [Pilar1/README.md](Pilar1/README.md) | Progresión de hitos, benchmark GPU vs CPU |
 | **Pilar 2 — Blockchain** | [Pilar2/README.md](Pilar2/README.md) | Evolución P1→P5, arquitectura final |
 | ↳ versión de producción | [Pilar2/P5/README.md](Pilar2/P5/README.md) | NCT/TrP/workers, colas, claves Redis, fallback, observabilidad |
-| **Infraestructura (IaC)** | [infra/README.md](infra/README.md) | Terraform/OpenTofu declarativo para OKE (aspiracional) |
+| **Infraestructura (IaC)** | [infra/README.md](infra/README.md) | Terraform/OpenTofu para Hetzner Cloud (server + firewall + k3s via cloud-init) |
 | **Kubernetes** | [k8s/README.md](k8s/README.md) | Manifiestos + cluster del profesor |
 | **Observabilidad** | [k8s/gke/observability/README.md](k8s/gke/observability/README.md) · [MANUAL.md](k8s/gke/observability/MANUAL.md) | Stack LGTM: métricas, logs, trazas, alertas |
 | **CI/CD** | [.github/workflows/README.md](.github/workflows/README.md) | Los 5 pipelines |
@@ -163,7 +163,7 @@ SDyPP-FINAL-ABC/
 ├── app/                    # App web (Next.js) — frontend + backend
 ├── Pilar1/                 # Prácticas de CUDA/GPU (Hit1-Hit7)
 ├── Pilar2/                 # Blockchain distribuida (P1-P5)
-├── infra/                  # Terraform — código IaC para OKE (aspiracional, no aplicado)
+├── infra/                  # Terraform — código IaC para Hetzner Cloud (ejecutable)
 ├── k8s/                    # Manifiestos Kubernetes
 │   ├── gke/               # Cluster propio (nombre histórico; hoy corre en k3s)
 │   │   ├── infra/         # Redis, RabbitMQ

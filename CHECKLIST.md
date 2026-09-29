@@ -15,9 +15,10 @@ blockchain de la cátedra).
 > **Estado del deploy (2026-09-29):** el sistema está **vivo en https://tesera.tech**
 > corriendo en un VPS Hetzner CPX32 (Nuremberg) con k3s single-node. Ver
 > [ADR-029](app/docs/adr/029-deploy-iteracion-gcp-oci-hetzner.md) para el racional del
-> stack elegido (GCP → OCI → Hetzner). El código IaC en `infra/*.tf` apunta a Oracle Cloud
-> OKE y **no se aplicó** — queda como evidencia declarativa; los pipelines de GitHub Actions
-> tampoco se corrieron para este deploy productivo.
+> stack elegido (GCP → OCI → Hetzner). El código IaC en `infra/*.tf` provisiona ese VPS
+> con Terraform (provider `hetznercloud/hcloud`) y `cloud-init` instala k3s al boot; los
+> 5 pipelines de GitHub Actions cubren `tofu apply`, build de imágenes a Docker Hub y
+> deploy con `kubectl` — son ejecutables end-to-end.
 
 ---
 
@@ -310,36 +311,35 @@ Se pueden escribir y revisar sin cluster; quedan listos para el próximo desplie
 
 ## Nota sobre el deploy actual (2026-09-29)
 
-Varios ítems del Bloque 3 se verificaron sobre el cluster vivo en https://tesera.tech,
-que corre en **un VPS Hetzner CPX32 (Nuremberg, 4 vCPU / 8 GB) con k3s single-node**.
-La ruta de decisión (GCP → OCI → Hetzner) está documentada en
+Los ítems del Bloque 3 se verifican sobre el cluster vivo en https://tesera.tech, que
+corre en **un VPS Hetzner CPX32 (Nuremberg, 4 vCPU / 8 GB) con k3s single-node**. La
+ruta de decisión (GCP → OCI → Hetzner) está documentada en
 [ADR-029](app/docs/adr/029-deploy-iteracion-gcp-oci-hetzner.md).
 
 **Diferencias vs la arquitectura de 3 pools que documenta el TP:**
 
 - El VPS es un único nodo etiquetado `pool=apps`. Los taints de separación de pools
-  quedan definidos en el código (`infra/oke.tf`) y en los manifests, pero no se
-  aplican físicamente porque el hardware es uno solo.
+  siguen definidos en los manifests como intención arquitectónica, pero no se aplican
+  físicamente porque el hardware es uno solo.
 - El HPA sigue funcionando (metrics-server viene con k3s), pero solo puede escalar
   hasta el máximo del nodo.
-- Ingress: se usa **Traefik** (built-in de k3s) en vez de ingress-nginx. Se agregó un
+- Ingress: **Traefik** built-in de k3s en vez de ingress-nginx. Se agregó un
   `Middleware` `https-redirect` para forzar HTTPS.
 - Registry: **Docker Hub público** (`gonzaec/*`), no OCIR ni Artifact Registry.
 - Postgres/Redis/RabbitMQ usan `StorageClass: local-path` (default de k3s).
 
-**Cómo reproducir el deploy** (pasos manuales, no automatizados por pipeline):
+**Cómo reproducir el deploy** (ver `infra/README.md` para el detalle):
 
-1. Alquilar VPS Hetzner CPX32 con Ubuntu 24.04 y SSH key.
-2. SSH al VPS y `curl -sfL https://get.k3s.io | sh -`.
-3. Copiar el kubeconfig de `/etc/rancher/k3s/k3s.yaml`; reemplazar `127.0.0.1` por el IP público del VPS y usarlo localmente.
-4. `kubectl label node <name> pool=apps`.
-5. Crear los secrets `app-secrets` (MP + SESSION_PASSWORD) y `rabbitmq-tls` (cert self-signed).
-6. Buildear las 4 imágenes con `docker buildx build --platform linux/amd64` y pushear a Docker Hub.
-7. Reemplazar `IMAGE_TAG` en los deployments por `docker.io/gonzaec/<img>:latest` y aplicar `k8s/gke/{namespaces,infra,apps,observability}/`.
-8. Instalar `cert-manager` por Helm; aplicar `managed-cert.yaml` y `ingress.yaml`.
-9. Apuntar el A record de `tesera.tech` al IP público del VPS.
+1. Cargar `HCLOUD_TOKEN` y `SSH_PUBLIC_KEY` en `infra/terraform.tfvars`.
+2. `cd infra && tofu init && tofu apply` — crea firewall, key y server. `cloud-init`
+   instala k3s y labelea el nodo con `pool=apps`.
+3. Bajar kubeconfig: `tofu output -raw kubeconfig_hint | sh`.
+4. Crear `app-secrets` y `rabbitmq-tls` a mano (o dejar que Pipeline 3 sincronice).
+5. Buildear + pushear las 4 imágenes a Docker Hub (o correr Pipeline 3 desde GitHub).
+6. Aplicar `k8s/gke/{namespaces,infra,apps,observability}/`.
+7. Instalar `cert-manager` por Helm; aplicar `managed-cert.yaml` y `ingress.yaml`.
+8. Apuntar el A record de `tesera.tech` al output `server_ipv4`.
 
-El código `infra/*.tf` (Terraform contra Oracle Cloud OKE) y los 5 pipelines de GitHub
-Actions (auth vía OCI CLI, push a OCIR, `oci ce cluster create-kubeconfig`) quedan en
-el repo **como evidencia de IaC y CI/CD declarativos** aunque no se hayan ejecutado en
-este deploy — ver ADR-029 para el motivo.
+Los 5 pipelines de GitHub Actions automatizan los pasos 2, 5 y 6 (Pipelines 1, 3, 2/5
+respectivamente). El bootstrap manual (secrets iniciales, cert-manager Helm, DNS)
+queda documentado en `infra/README.md` y `k8s/README.md`.
