@@ -10,17 +10,17 @@ criptográfico único en una blockchain propia con Proof of Work.
 
 ```
 ┌─────────────────────────────────────────────────────────────────────┐
-│                        CLUSTER GKE (propio)                        │
+│                    CLUSTER k3s (propio, VPS Hetzner)               │
 │                                                                     │
 │  ┌──────────┐   ┌──────────┐   ┌──────────┐   ┌────────────────┐  │
 │  │ Frontend  │   │   NCT    │   │   TrP    │   │  Worker CPU    │  │
 │  │ (Next.js) │   │ (FastAPI)│   │ (Python) │   │  (fallback)    │  │
-│  │  ×2       │   │  ×2      │   │  ×1      │   │  ×2            │  │
+│  │  ×2       │   │  ×2      │   │  ×2      │   │  ×2            │  │
 │  └─────┬─────┘   └────┬─────┘   └────┬─────┘   └───────┬────────┘  │
 │        │              │              │                  │           │
 │        │         ┌────┴─────┐   ┌────┴─────┐           │           │
 │        │         │  Redis   │   │ RabbitMQ │───────────┘           │
-│        │         │  (AOF)   │   │          │                       │
+│        │         │  (AOF)   │   │  (AMQPS) │                       │
 │  ┌─────┴─────┐   └──────────┘   └────┬─────┘                       │
 │  │ Postgres  │                       │                              │
 │  └───────────┘                       │                              │
@@ -40,6 +40,12 @@ criptográfico único en una blockchain propia con Proof of Work.
                               └─────────────────┘
 ```
 
+El cluster propio corre en **un único VPS de Hetzner Cloud** (CPX32, 4 vCPU / 8 GB,
+Nuremberg) con **k3s single-node**. La separación en pools lógicos (`apps`, `infra`,
+`monitoring`) que documenta el TP y que está impuesta en `infra/oke.tf` y en los taints
+de los manifests **se colapsa a un solo nodo etiquetado `pool=apps`** en este deploy —
+ver [ADR-029](app/docs/adr/029-deploy-iteracion-gcp-oci-hetzner.md) para el racional.
+
 ## Los tres pilares
 
 El proyecto se divide en tres pilares que se integran en el sistema final:
@@ -48,7 +54,7 @@ El proyecto se divide en tres pilares que se integran en el sistema final:
 |-------|------|------------|
 | **Pilar 1** | Programación GPU con CUDA | [`Pilar1/`](Pilar1/) |
 | **Pilar 2** | Blockchain distribuida con PoW | [`Pilar2/`](Pilar2/) |
-| **Pilar 3** | CI/CD, IaC, deploy en GKE | [`infra/`](infra/), [`k8s/`](k8s/), [`.github/workflows/`](.github/workflows/) |
+| **Pilar 3** | CI/CD, IaC, deploy en Kubernetes | [`infra/`](infra/), [`k8s/`](k8s/), [`.github/workflows/`](.github/workflows/) |
 
 La **app web** ([`app/`](app/)) es la capa que integra todo: gestiona eventos y entradas,
 firma transacciones con ECDSA, y se comunica con la blockchain para emitir, transferir y
@@ -75,12 +81,32 @@ validar tickets on-chain.
 | Base de datos | PostgreSQL 17 + Prisma 7 |
 | Blockchain | Python (FastAPI), Redis, RabbitMQ |
 | Minería GPU | CUDA C (compilado), workers Python |
-| Infraestructura | GKE (Google Kubernetes Engine), Terraform/OpenTofu |
-| Observabilidad | Prometheus, Grafana, Loki, Tempo, Alloy (ver [`k8s/gke/observability/`](k8s/gke/observability/)) |
+| Infraestructura declarativa | Terraform/OpenTofu (código para Oracle Cloud OKE — no aplicado, ver ADR-029) |
+| Deploy en producción | VPS Hetzner Cloud + k3s single-node |
+| Observabilidad | Prometheus, Grafana, Loki, Tempo, Alloy, Alertmanager |
 | CI/CD | GitHub Actions (5 pipelines) |
 | Pagos | MercadoPago Checkout Pro |
 | Criptografía | ECDSA P-256, SHA-256, WebCrypto API |
-| HTTPS | GKE Managed Certificate, dominio `tesera.tech` |
+| Registry de imágenes | Docker Hub público (`gonzaec/*`) |
+| HTTPS | Traefik (built-in k3s) + cert-manager + Let's Encrypt, dominio `tesera.tech` |
+
+## Cómo desplegar en la nube
+
+El deploy actual corre en un VPS de Hetzner con k3s. Los pasos manuales están en
+[ADR-029](app/docs/adr/029-deploy-iteracion-gcp-oci-hetzner.md) sección "Cómo
+reproducir el deploy Hetzner". Resumen:
+
+1. Alquilar un VPS Hetzner CPX32 (Ubuntu 24.04) en Nuremberg.
+2. `curl -sfL https://get.k3s.io | sh -` para instalar k3s.
+3. Copiar el kubeconfig desde `/etc/rancher/k3s/k3s.yaml`, reemplazar `127.0.0.1` por el IP público.
+4. Labelar el nodo con `pool=apps`.
+5. Crear los secrets (`app-secrets`, `rabbitmq-tls`) y desplegar `k8s/gke/{namespaces,infra,apps,observability}/`.
+6. Instalar `cert-manager` por Helm; aplicar el ClusterIssuer y el Ingress (Traefik ya viene con k3s).
+7. Apuntar el DNS de `tesera.tech` al IP del VPS.
+
+El código `infra/*.tf` está escrito contra el provider `oci` (Oracle Cloud OKE) y **no
+se ejecuta en el deploy actual** — queda como evidencia de IaC declarativo. Los pipelines
+de GitHub Actions también apuntan a OCI y no se corrieron para esta versión productiva.
 
 ## Cómo correr localmente
 
@@ -120,11 +146,11 @@ Cada parte del sistema tiene su propio README. Índice:
 | **Pilar 1 — GPU/CUDA** | [Pilar1/README.md](Pilar1/README.md) | Progresión de hitos, benchmark GPU vs CPU |
 | **Pilar 2 — Blockchain** | [Pilar2/README.md](Pilar2/README.md) | Evolución P1→P5, arquitectura final |
 | ↳ versión de producción | [Pilar2/P5/README.md](Pilar2/P5/README.md) | NCT/TrP/workers, colas, claves Redis, fallback, observabilidad |
-| **Infraestructura** | [infra/README.md](infra/README.md) | Terraform/OpenTofu, GKE, node pools |
-| **Kubernetes** | [k8s/README.md](k8s/README.md) | Manifiestos GKE + cluster del profesor |
+| **Infraestructura (IaC)** | [infra/README.md](infra/README.md) | Terraform/OpenTofu declarativo para OKE (aspiracional) |
+| **Kubernetes** | [k8s/README.md](k8s/README.md) | Manifiestos + cluster del profesor |
 | **Observabilidad** | [k8s/gke/observability/README.md](k8s/gke/observability/README.md) · [MANUAL.md](k8s/gke/observability/MANUAL.md) | Stack LGTM: métricas, logs, trazas, alertas |
 | **CI/CD** | [.github/workflows/README.md](.github/workflows/README.md) | Los 5 pipelines |
-| **ADRs** | [app/docs/adr/](app/docs/adr/) | Decisiones de arquitectura de la app |
+| **ADRs** | [app/docs/adr/](app/docs/adr/) | Decisiones de arquitectura de la app y del deploy |
 
 `CLAUDE.md` (raíz y `app/`) tiene el contexto técnico para desarrollo asistido por IA.
 
@@ -137,9 +163,9 @@ SDyPP-FINAL-ABC/
 ├── app/                    # App web (Next.js) — frontend + backend
 ├── Pilar1/                 # Prácticas de CUDA/GPU (Hit1-Hit7)
 ├── Pilar2/                 # Blockchain distribuida (P1-P5)
-├── infra/                  # Terraform — infraestructura GCP
+├── infra/                  # Terraform — código IaC para OKE (aspiracional, no aplicado)
 ├── k8s/                    # Manifiestos Kubernetes
-│   ├── gke/               # Cluster propio
+│   ├── gke/               # Cluster propio (nombre histórico; hoy corre en k3s)
 │   │   ├── infra/         # Redis, RabbitMQ
 │   │   ├── apps/          # Frontend, NCT, TrP, workers, Postgres
 │   │   └── observability/ # Prometheus, Grafana, Loki, Tempo, Alloy, alertas

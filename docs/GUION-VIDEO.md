@@ -135,12 +135,19 @@ del cooperativo. Está medido en los CSV de `resultados/`.
 
 ## 6. Infraestructura y producción · 2,5 min
 
-**Pantalla:** `infra/gke.tf`, `k8s/gke/`, `.github/workflows/`.
+**Pantalla:** `infra/oke.tf`, `k8s/gke/`, `.github/workflows/`, y después `https://tesera.tech`.
 
-- **IaC**: OpenTofu levanta VPC, cluster GKE y tres node pools. Cluster Autoscaler en `apps`
-  (2-5 nodos).
+Hay dos historias que contar: **la infra declarativa** (código IaC + 5 pipelines) y **el
+deploy productivo real** (VPS Hetzner con k3s single-node). No son lo mismo, y el
+[ADR-029](../app/docs/adr/029-deploy-iteracion-gcp-oci-hetzner.md) documenta por qué.
+
+### La infra declarativa (aspiracional, código en el repo)
+
+- **IaC en `infra/`**: OpenTofu describe un cluster Kubernetes con tres node pools, VPC,
+  subnets, gateways, IAM y Container Registry. La versión actual apunta a Oracle Cloud OKE
+  (era GCP GKE en la versión anterior — se migró en 2026-08-07).
 - **Separación de cargas impuesta**: taints en `apps` y `monitoring`, con tolerations en cada
-  workload. **Mencioná por qué `infra` quedó sin taint**: los addons de GKE (CoreDNS,
+  workload. **Mencioná por qué `infra` quedó sin taint**: los addons gestionados (CoreDNS,
   metrics-server) solo toleran `CriticalAddonsOnly`; si tainteábamos los tres pools, el DNS
   del cluster se rompía.
 - **Endurecimiento**: los 7 workloads corren `runAsNonRoot`, con uid explícito y todas las
@@ -150,8 +157,33 @@ del cooperativo. Está medido en los CSV de `resultados/`.
 - **HPA** para frontend y NCT. **Explicá por qué el worker-cpu queda afuera**: sus réplicas
   ya las maneja el TrP durante el fallback, y dos controladores sobre el mismo campo
   producirían flapping.
-- **5 pipelines** con Gitleaks como gate, autenticación por Workload Identity — cero llaves
-  estáticas en el repo.
+- **5 pipelines** con Gitleaks como gate, autenticación por OIDC — cero llaves estáticas.
+
+### El deploy real, y por qué
+
+**Mostrá `https://tesera.tech` funcionando** con el candadito verde de TLS. Después contá,
+sin adornos, la iteración que resume el ADR-029:
+
+- Julio: GKE en producción con la IaC que se acaba de mostrar. Se agotó el free trial de GCP
+  y la cuenta se dio de baja.
+- Agosto: intento con Azure for Students; bloqueado por region policy y cuota de vCPUs = 0
+  en las únicas familias que AKS Students acepta.
+- Agosto-septiembre: migración completa a Oracle Cloud OKE Always Free. Cluster creado, pero
+  el node pool ARM Ampere falló con `Out of host capacity` en cada intento — LATAM está
+  sobrevendida.
+- Septiembre: un **VPS Hetzner CPX32** (~USD 10 por la ventana de defensa) con **k3s
+  single-node**. Deploy end-to-end en 2 horas.
+
+El punto a transmitir: **la calidad del diseño no depende del hardware disponible**. Los
+manifests, la separación de pools, los pipelines y la IaC valen igual como evidencia de que
+sabemos hacer despliegue declarativo. Que el runtime hoy sea un k3s de un solo nodo es una
+decisión pragmática frente a restricciones externas —cuotas, capacidad, tarjetas
+rechazadas—, no un atajo técnico.
+
+Cerrá diciendo qué **se pierde** en single-node (los taints no imponen nada porque hay un
+solo nodo; el HPA solo escala hasta 4 vCPU) y qué **se mantiene** (arquitectura de servicios,
+observabilidad, TLS, autoscaling como mecanismo, HA de las apps con múltiples réplicas
+dentro del nodo).
 
 ---
 
