@@ -1,6 +1,6 @@
 # HorizontalPodAutoscaler para las cargas que escalan por demanda de tráfico.
 #
-# Funcionan en conjunto con el Cluster Autoscaler de infra/gke.tf: el HPA suma
+# Funcionan en conjunto con el Cluster Autoscaler de infra/oke.tf: el HPA suma
 # pods, y si el pool `apps` se queda sin lugar, el autoscaler suma nodos (hasta
 # 5). Sin las dos piezas el escalado se corta en el primer cuello.
 #

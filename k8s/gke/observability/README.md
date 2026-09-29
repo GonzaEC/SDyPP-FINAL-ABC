@@ -16,7 +16,7 @@ Exporters: `redis_exporter`, `postgres_exporter`, plugin `rabbitmq_prometheus`,
 ## Despliegue
 
 1. **Infra** (una vez): aplicar Terraform para crear el node pool `monitoring`
-   (`infra/gke.tf`). Sin él, los pods quedan `Pending` por el taint.
+   (`infra/oke.tf`). Sin él, los pods quedan `Pending` por el taint.
    ```bash
    cd infra && tofu apply
    ```

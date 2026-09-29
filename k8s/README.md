@@ -1,6 +1,8 @@
 # Kubernetes — Manifiestos de despliegue
 
-Manifiestos para dos clusters: el propio (GKE) y el del profesor (GPU).
+Manifiestos para dos clusters: el propio (OKE Always Free) y el del profesor (GPU).
+El directorio se sigue llamando `k8s/gke/` por compatibilidad histórica —
+los manifests son estándar y funcionan igual en OKE.
 
 ## Estructura
 
@@ -31,9 +33,15 @@ k8s/
     └── worker-deployment.yaml
 ```
 
-## Cluster propio (GKE)
+## Cluster propio (OKE Always Free)
 
-### Capa infra (node pool `infra`, 1 nodo e2-medium)
+**Nota importante sobre la arquitectura de pools**: OKE Always Free tiene un
+único node pool ARM (`VM.Standard.A1.Flex`) con 4 nodos × 1 OCPU / 6 GB. La
+separación en 3 "pools lógicos" (infra, apps, monitoring) se logra aplicando
+**labels y taints por nodo** después del bootstrap. Ver la sección "Bootstrap
+manual de labels/taints" más abajo.
+
+### Capa infra (1 nodo etiquetado `pool=infra`, sin taint)
 
 | Servicio | Réplicas | Persistencia | Exposición |
 |----------|----------|-------------|-----------|
@@ -45,7 +53,7 @@ Postgres, Redis y RabbitMQ son `StatefulSet` con `volumeClaimTemplates`: K8s cre
 réplica (`<volumen>-<statefulset>-<ordinal>`, p. ej. `postgres-storage-postgres-0`) y los
 reutiliza entre reinicios.
 
-### Capa apps (node pool `apps`, 2 nodos e2-medium spot)
+### Capa apps (2 nodos etiquetados `pool=apps` con taint `apps=true:NoSchedule`)
 
 | Servicio | Réplicas | Imagen | Puerto | Health check |
 |----------|----------|--------|--------|-------------|
@@ -57,11 +65,76 @@ reutiliza entre reinicios.
 
 ### Networking
 
-- **Ingress** con GKE Managed Certificate para HTTPS en `tesera.tech`.
-- IP estática global `frontend-ip` (34.160.1.16).
+- **Ingress** con `ingress-nginx` + `cert-manager` (Let's Encrypt) para HTTPS
+  en `tesera.tech`.
+- OCI **crea automáticamente un Flex Load Balancer** cuando el Service
+  `ingress-nginx-controller` con `type: LoadBalancer` se aplica (usa la subnet
+  `sdypp-lb-subnet`). La IP pública queda asignada al LB — la sacamos con
+  `kubectl get svc -n ingress-nginx`.
 - Frontend expuesto via NodePort → Ingress.
 - NCT como ClusterIP (solo accesible dentro del cluster).
 - Redis y RabbitMQ con LoadBalancer para que los workers del profesor se conecten.
+
+### Bootstrap manual de labels/taints (una vez, tras `tofu apply`)
+
+OKE Always Free entrega 4 nodos idénticos en un solo node pool. Los etiquetamos
+por función para reproducir la arquitectura de 3 pools lógicos:
+
+```bash
+# Bajar kubeconfig
+oci ce cluster create-kubeconfig \
+  --cluster-id $(cd infra && tofu output -raw cluster_id) \
+  --file ~/.kube/config \
+  --region sa-santiago-1 \
+  --token-version 2.0.0 \
+  --kube-endpoint PUBLIC_ENDPOINT
+
+# Listar los 4 nodos y elegir cuál va a cada rol
+kubectl get nodes -o wide
+
+# Ejemplo (reemplazar los NAME reales):
+NODE1=<name-nodo-1>
+NODE2=<name-nodo-2>
+NODE3=<name-nodo-3>
+NODE4=<name-nodo-4>
+
+# 2 nodos para apps (frontend, NCT, TrP, worker-cpu, Postgres)
+kubectl label node $NODE1 pool=apps
+kubectl label node $NODE2 pool=apps
+kubectl taint node $NODE1 apps=true:NoSchedule
+kubectl taint node $NODE2 apps=true:NoSchedule
+
+# 1 nodo para infra (Redis, RabbitMQ) — SIN taint para que los addons de
+# kube-system tengan landing zone.
+kubectl label node $NODE3 pool=infra
+
+# 1 nodo para monitoring (LGTM stack)
+kubectl label node $NODE4 pool=monitoring
+kubectl taint node $NODE4 monitoring=true:NoSchedule
+```
+
+### Bootstrap de ingress-nginx + cert-manager (una vez)
+
+```bash
+helm repo add ingress-nginx https://kubernetes.github.io/ingress-nginx
+helm repo update
+helm install ingress-nginx ingress-nginx/ingress-nginx \
+  --namespace ingress-nginx --create-namespace \
+  --set controller.service.type=LoadBalancer \
+  --set controller.service.annotations."oci\.oraclecloud\.com/load-balancer-type"=lb
+
+# cert-manager (CRDs + controller)
+helm repo add jetstack https://charts.jetstack.io
+helm repo update
+helm install cert-manager jetstack/cert-manager \
+  --namespace cert-manager --create-namespace \
+  --set crds.enabled=true
+
+# Sacar la IP publica que OCI le asignó al LB
+kubectl get svc -n ingress-nginx ingress-nginx-controller
+
+# Apuntar el A record de tesera.tech a esa IP en el DNS.
+```
 
 ### ConfigMap (`app-config`)
 
@@ -86,7 +159,7 @@ Los deployments usan `IMAGE_TAG` como placeholder de imagen. Pipeline 3 reemplaz
 con `sed` antes de aplicar:
 
 ```bash
-sed -i "s|IMAGE_TAG|us-central1-docker.pkg.dev/PROYECTO/sdypp/IMAGEN:SHA|g" *.yaml
+sed -i "s|IMAGE_TAG|scl.ocir.io/<namespace>/IMAGEN:SHA|g" *.yaml
 kubectl apply -f .
 ```
 

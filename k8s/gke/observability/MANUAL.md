@@ -55,7 +55,7 @@ Servicios (NCT, TrP, workers, frontend, gpu-server)
 ## 2. Acceso
 
 Nada se expone público. Se accede por `kubectl port-forward` (necesitás
-credenciales del cluster: `gcloud container clusters get-credentials sdypp-cluster --zone us-central1-a`).
+credenciales del cluster: `oci ce cluster create-kubeconfig --cluster-id <OKE_CLUSTER_ID> --file ~/.kube/config --region sa-santiago-1 --token-version 2.0.0 --kube-endpoint PUBLIC_ENDPOINT`).
 
 ```bash
 # Grafana — la puerta de entrada principal

@@ -83,7 +83,7 @@ spec:
         app: grafana
     spec:
       nodeSelector:
-        pool: monitoring
+        pool: apps
       tolerations:
         - key: monitoring
           operator: Equal

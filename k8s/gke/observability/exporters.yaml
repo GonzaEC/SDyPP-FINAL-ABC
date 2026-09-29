@@ -31,7 +31,7 @@ spec:
         prometheus.io/port: "9121"
     spec:
       nodeSelector:
-        pool: monitoring
+        pool: apps
       tolerations:
         - key: monitoring
           operator: Equal
@@ -88,7 +88,7 @@ spec:
         prometheus.io/port: "9187"
     spec:
       nodeSelector:
-        pool: monitoring
+        pool: apps
       tolerations:
         - key: monitoring
           operator: Equal
@@ -148,7 +148,7 @@ spec:
     spec:
       serviceAccountName: kube-state-metrics
       nodeSelector:
-        pool: monitoring
+        pool: apps
       tolerations:
         - key: monitoring
           operator: Equal

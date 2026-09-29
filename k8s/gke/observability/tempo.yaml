@@ -67,7 +67,7 @@ spec:
         app: tempo
     spec:
       nodeSelector:
-        pool: monitoring
+        pool: apps
       tolerations:
         - key: monitoring
           operator: Equal
