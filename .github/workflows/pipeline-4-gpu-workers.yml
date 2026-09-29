@@ -1,5 +1,8 @@
 name: "Pipeline 4 - Workers GPU (Cluster Profesor)"
 
+# Buildea la imagen del worker GPU (x86 nativo) y la despliega al cluster
+# del profesor usando el kubeconfig que nos compartio.
+
 on:
   push:
     branches: [main]
@@ -9,7 +12,7 @@ on:
       - "Pilar2/P5/brute_force_range.cu"
       - "Pilar2/P5/Dockerfile.worker"
       # observability.py y requirements.txt se hornean en la imagen
-      # (`COPY . .` y `pip install -r requirements.txt`), así que un cambio en
+      # (`COPY . .` y `pip install -r requirements.txt`), asi que un cambio en
       # ellos debe redesplegar los workers GPU.
       - "Pilar2/P5/observability.py"
       - "Pilar2/P5/requirements.txt"
@@ -30,38 +33,38 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Login to OCIR
-        run: |
-          echo "${{ secrets.OCIR_AUTH_TOKEN }}" | docker login \
-            ${{ secrets.OCIR_REGISTRY }} \
-            -u "${{ secrets.OCIR_NAMESPACE }}/${{ secrets.OCIR_USERNAME }}" \
-            --password-stdin
+      - name: Login a Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
 
-      # El cluster del profesor tiene GPUs x86; el build de la imagen GPU
-      # queda x86 (nativo del runner).
-      - name: Build and push GPU worker image
+      # El cluster del profesor tiene GPUs x86; el build queda x86 nativo del
+      # runner (sin buildx).
+      - name: Build + push imagen GPU
         run: |
-          IMAGE="${{ secrets.OCIR_REGISTRY }}/${{ secrets.OCIR_NAMESPACE }}/blockchain-worker-gpu"
+          IMAGE="${{ secrets.DOCKERHUB_USERNAME }}/blockchain-worker-gpu"
           docker build -t "${IMAGE}:${{ github.sha }}" -t "${IMAGE}:latest" \
             -f Pilar2/P5/Dockerfile.worker Pilar2/P5/
           docker push "${IMAGE}:${{ github.sha }}"
           docker push "${IMAGE}:latest"
 
   deploy-profesor:
-    name: Deploy to Profesor Cluster
+    name: Deploy al cluster del profesor
     needs: build-gpu-image
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
 
-      - name: Setup kubeconfig
+      - name: Setup kubeconfig del profesor
         run: |
           mkdir -p ~/.kube
           echo "${{ secrets.KUBE_CONFIG_PROFESOR }}" | base64 -d > ~/.kube/config
+          chmod 600 ~/.kube/config
 
-      - name: Update image tags and deploy
+      - name: Reemplazar IMAGE_TAG y aplicar
         run: |
-          REGISTRY="${{ secrets.OCIR_REGISTRY }}/${{ secrets.OCIR_NAMESPACE }}"
+          REGISTRY="docker.io/${{ secrets.DOCKERHUB_USERNAME }}"
           cd k8s/profesor
 
           sed -i "s|image: IMAGE_TAG|image: ${REGISTRY}/blockchain-worker-gpu:${{ github.sha }}|" gpu-server-deployment.yaml

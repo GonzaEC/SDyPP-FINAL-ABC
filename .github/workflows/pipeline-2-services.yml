@@ -1,13 +1,16 @@
 name: "Pipeline 2 - Servicios Infraestructura"
 
+# Aplica Redis + RabbitMQ + secret TLS de RabbitMQ al cluster k3s Hetzner.
+
 on:
   workflow_dispatch:
   push:
     branches: [main]
     paths:
       - "k8s/gke/infra/**"
+      - "k8s/gke/namespaces.yaml"
   workflow_run:
-    workflows: ["Pipeline 1 - Infraestructura OKE"]
+    workflows: ["Pipeline 1 - Infraestructura Hetzner"]
     types: [completed]
 
 permissions:
@@ -25,29 +28,16 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Setup OCI CLI
-        uses: oracle-actions/configure-oci-cli@v1.3.2
-        with:
-          user: ${{ secrets.OCI_USER_OCID }}
-          tenancy: ${{ secrets.OCI_TENANCY_OCID }}
-          fingerprint: ${{ secrets.OCI_FINGERPRINT }}
-          privateKey: ${{ secrets.OCI_PRIVATE_KEY }}
-          region: ${{ secrets.OCI_REGION }}
-
-      - name: Bajar kubeconfig del OKE
+      - name: Setup kubeconfig del cluster k3s
         run: |
           mkdir -p ~/.kube
-          oci ce cluster create-kubeconfig \
-            --cluster-id ${{ secrets.OKE_CLUSTER_ID }} \
-            --file ~/.kube/config \
-            --region ${{ secrets.OCI_REGION }} \
-            --token-version 2.0.0 \
-            --kube-endpoint PUBLIC_ENDPOINT
+          echo "${{ secrets.KUBE_CONFIG_HETZNER }}" | base64 -d > ~/.kube/config
+          chmod 600 ~/.kube/config
 
       - name: Deploy namespace
         run: kubectl apply -f k8s/gke/namespaces.yaml
 
-      - name: Sync RabbitMQ TLS secret from GitHub Secrets
+      - name: Sync RabbitMQ TLS secret desde GitHub Secrets
         run: |
           echo "${{ secrets.RABBITMQ_TLS_CERT_B64 }}" | base64 -d > /tmp/rabbitmq-cert.pem
           echo "${{ secrets.RABBITMQ_TLS_KEY_B64 }}"  | base64 -d > /tmp/rabbitmq-key.pem
@@ -57,5 +47,5 @@ jobs:
             --dry-run=client -o yaml | kubectl apply -f -
           rm -f /tmp/rabbitmq-cert.pem /tmp/rabbitmq-key.pem
 
-      - name: Deploy infrastructure services
+      - name: Deploy infra services (Redis + RabbitMQ)
         run: kubectl apply -f k8s/gke/infra/

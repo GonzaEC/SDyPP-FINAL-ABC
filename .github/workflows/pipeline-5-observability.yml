@@ -1,12 +1,13 @@
 name: "Pipeline 5 - Observabilidad"
 
-# Despliega el stack de observabilidad (Prometheus, Grafana, Loki, Tempo, Alloy,
-# Alertmanager, exporters) al cluster OKE.
+# Despliega el stack LGTM (Prometheus, Grafana, Loki, Tempo, Alloy,
+# Alertmanager, exporters) al cluster k3s Hetzner.
 #
-# Requisito: el nodo etiquetado `pool=monitoring` debe existir y estar tainteado.
-# En OKE Always Free tenemos un unico node pool de 4 nodos; el bootstrap manual
-# (documentado en k8s/README.md) etiqueta un nodo como monitoring y le agrega
-# el taint monitoring=true:NoSchedule.
+# Al ser single-node, el nodo unico esta etiquetado `pool=apps` en el
+# cloud-init de Terraform. Los manifests de observability tambien piden
+# `pool=apps` (se colapsaron los 3 pools historicos a uno solo — ver
+# ADR-029), asi que no hace falta bootstrap manual de labels.
+
 on:
   workflow_dispatch:
   push:
@@ -15,7 +16,7 @@ on:
       - "k8s/gke/observability/**"
       - ".github/workflows/pipeline-5-observability.yml"
   workflow_run:
-    workflows: ["Pipeline 1 - Infraestructura OKE"]
+    workflows: ["Pipeline 1 - Infraestructura Hetzner"]
     types: [completed]
 
 permissions:
@@ -33,39 +34,15 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Setup OCI CLI
-        uses: oracle-actions/configure-oci-cli@v1.3.2
-        with:
-          user: ${{ secrets.OCI_USER_OCID }}
-          tenancy: ${{ secrets.OCI_TENANCY_OCID }}
-          fingerprint: ${{ secrets.OCI_FINGERPRINT }}
-          privateKey: ${{ secrets.OCI_PRIVATE_KEY }}
-          region: ${{ secrets.OCI_REGION }}
-
-      - name: Bajar kubeconfig del OKE
+      - name: Setup kubeconfig del cluster k3s
         run: |
           mkdir -p ~/.kube
-          oci ce cluster create-kubeconfig \
-            --cluster-id ${{ secrets.OKE_CLUSTER_ID }} \
-            --file ~/.kube/config \
-            --region ${{ secrets.OCI_REGION }} \
-            --token-version 2.0.0 \
-            --kube-endpoint PUBLIC_ENDPOINT
+          echo "${{ secrets.KUBE_CONFIG_HETZNER }}" | base64 -d > ~/.kube/config
+          chmod 600 ~/.kube/config
 
-      - name: Verificar que hay un nodo monitoring
-        run: |
-          for i in $(seq 1 40); do
-            ready=$(kubectl get nodes -l pool=monitoring --no-headers 2>/dev/null | grep -c " Ready ") || ready=0
-            if [ "$ready" -ge 1 ]; then
-              echo "$ready nodo(s) 'pool=monitoring' Ready."
-              exit 0
-            fi
-            echo "Esperando nodo 'pool=monitoring'... ($i/40)"
-            sleep 15
-          done
-          echo "::error::Ningun nodo con label pool=monitoring. Correr el bootstrap manual de labels/taints (ver k8s/README.md)."
-          exit 1
-
+      # Namespace y RBAC primero: el resto de los recursos viven en el ns
+      # `observability` y `kubectl apply -f <dir>` ordena por nombre de archivo,
+      # asi que sin esto algunos objetos se aplicarian antes de existir el ns.
       - name: Namespace + RBAC
         run: |
           kubectl apply -f k8s/gke/observability/namespace.yaml
@@ -74,7 +51,9 @@ jobs:
       - name: Deploy stack
         run: kubectl apply -f k8s/gke/observability/
 
-      - name: Esperar rollout de Grafana/Prometheus
+      - name: Esperar rollout de Grafana y Prometheus
         run: |
+          # 300s: la primera vez el nodo tiene que bajar las imagenes
+          # (Prometheus, Grafana, Loki, Tempo), que no son chicas.
           kubectl -n observability rollout status deploy/prometheus --timeout=300s
           kubectl -n observability rollout status deploy/grafana --timeout=300s

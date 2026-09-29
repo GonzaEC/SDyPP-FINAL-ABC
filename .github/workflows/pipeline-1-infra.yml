@@ -1,10 +1,21 @@
-name: "Pipeline 1 - Infraestructura OKE"
+name: "Pipeline 1 - Infraestructura Hetzner"
+
+# Provisiona el VPS Hetzner con k3s via cloud-init. En push a infra/** solo
+# corre `tofu plan` (drift detection); el apply real es manual (dispatch)
+# para evitar recrear el server por accidente y perder los PVCs locales.
 
 on:
   push:
     branches: [main]
     paths: ["infra/**"]
   workflow_dispatch:
+    inputs:
+      action:
+        description: "plan (default) o apply"
+        required: false
+        default: "plan"
+        type: choice
+        options: [plan, apply]
 
 permissions:
   contents: read
@@ -14,29 +25,17 @@ jobs:
     uses: ./.github/workflows/gitleaks.yml
 
   tofu:
-    name: OpenTofu Plan & Apply
+    name: OpenTofu ${{ github.event.inputs.action || 'plan' }}
     needs: gitleaks
     runs-on: ubuntu-latest
     defaults:
       run:
         working-directory: infra
+    env:
+      TF_VAR_hcloud_token:   ${{ secrets.HCLOUD_TOKEN }}
+      TF_VAR_ssh_public_key: ${{ secrets.SSH_PUBLIC_KEY }}
     steps:
       - uses: actions/checkout@v4
-
-      - name: Setup OCI CLI
-        uses: oracle-actions/configure-oci-cli@v1.3.2
-        with:
-          user: ${{ secrets.OCI_USER_OCID }}
-          tenancy: ${{ secrets.OCI_TENANCY_OCID }}
-          fingerprint: ${{ secrets.OCI_FINGERPRINT }}
-          privateKey: ${{ secrets.OCI_PRIVATE_KEY }}
-          region: ${{ secrets.OCI_REGION }}
-
-      - name: Write private key for Terraform
-        run: |
-          mkdir -p ~/.oci
-          echo "${{ secrets.OCI_PRIVATE_KEY }}" > ~/.oci/oci_api_key.pem
-          chmod 600 ~/.oci/oci_api_key.pem
 
       - uses: opentofu/setup-opentofu@v1
 
@@ -44,16 +43,8 @@ jobs:
         run: tofu init
 
       - name: Plan
-        env:
-          TF_VAR_tenancy_ocid: ${{ secrets.OCI_TENANCY_OCID }}
-          TF_VAR_user_ocid: ${{ secrets.OCI_USER_OCID }}
-          TF_VAR_fingerprint: ${{ secrets.OCI_FINGERPRINT }}
-          TF_VAR_private_key_path: /home/runner/.oci/oci_api_key.pem
-          TF_VAR_region: ${{ secrets.OCI_REGION }}
-          TF_VAR_compartment_ocid: ${{ secrets.OCI_COMPARTMENT_OCID }}
-          TF_VAR_ocir_namespace: ${{ secrets.OCIR_NAMESPACE }}
-          TF_VAR_ssh_public_key: ${{ secrets.SSH_PUBLIC_KEY }}
         run: tofu plan -out=plan.tfplan
 
       - name: Apply
+        if: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.action == 'apply' }}
         run: tofu apply plan.tfplan
