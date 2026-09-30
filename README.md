@@ -96,6 +96,11 @@ El deploy actual corre en un VPS de Hetzner con k3s. Los pasos manuales están e
 [ADR-029](app/docs/adr/029-deploy-iteracion-gcp-oci-hetzner.md) sección "Cómo
 reproducir el deploy Hetzner". Resumen:
 
+> 📖 **Cómo llegamos hasta acá:** el deploy pasó por GCP, Azure Students y
+> Oracle Cloud antes de aterrizar en Hetzner + k3s. La historia completa (por
+> qué se cerró cada opción, qué se aprendió, y qué cambios de arquitectura
+> obligó cada paso) está en [`docs/RECORRIDO-DEPLOY.md`](docs/RECORRIDO-DEPLOY.md).
+
 1. Alquilar un VPS Hetzner CPX32 (Ubuntu 24.04) en Nuremberg.
 2. `curl -sfL https://get.k3s.io | sh -` para instalar k3s.
 3. Copiar el kubeconfig desde `/etc/rancher/k3s/k3s.yaml`, reemplazar `127.0.0.1` por el IP público.
