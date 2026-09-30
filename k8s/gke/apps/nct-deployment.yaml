@@ -67,6 +67,18 @@ spec:
           image: IMAGE_TAG
           ports:
             - containerPort: 8000
+          envFrom:
+            - configMapRef:
+                name: app-config
+          # El ConfigMap compartido apunta a 4318 porque lo consume el frontend
+          # con @vercel/otel (OTLP/HTTP). Los servicios Python exportan por gRPC
+          # (observability.py:170), asi que sin este override el exporter no
+          # conecta. Las entradas de `env` pisan a las de `envFrom`.
+          # OTEL_SERVICE_NAME no se toca: observability.py:189 pasa el nombre
+          # explicito a Resource.create(), la env no aplica para estos servicios.
+          env:
+            - name: OTEL_EXPORTER_OTLP_ENDPOINT
+              value: "http://alloy.observability.svc.cluster.local:4317"
           resources:
             requests:
               cpu: 50m
