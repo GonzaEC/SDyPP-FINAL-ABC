@@ -212,6 +212,20 @@ def restore_from_fallback():
     scale_cpu_workers(0)
     return True
 
+def ensure_fallback_workers():
+    """Re-asserta las réplicas de worker-cpu mientras el fallback siga activo.
+
+    activate_fallback()/restore_from_fallback() solo corren en la transición, pero
+    el manifiesto declara `replicas: 0` y cualquier `kubectl apply` (pipeline 3 lo
+    corre sobre todo el directorio apps/) lo vuelve a pisar. Como el flag
+    FALLBACK_MODE_KEY sigue en "1", el monitor_loop no matchea ninguno de los dos
+    if: dificultad en 0 y cero workers, sin minar nada y sin log de error.
+
+    El PATCH a /scale es idempotente, asi que llamarlo en cada iteracion del
+    monitor es seguro con N replicas del TrP corriendo.
+    """
+    scale_cpu_workers(CPU_WORKER_REPLICAS)
+
 def monitor_loop():
     while True:
         try:
@@ -224,6 +238,8 @@ def monitor_loop():
                 activate_fallback()
             elif gpu_alive and in_fallback:
                 restore_from_fallback()
+            elif not gpu_alive and in_fallback:
+                ensure_fallback_workers()
         except Exception as e:
             log.error(f"monitor_loop iter fallo (sigo intentando): {e}")
         time.sleep(15)
