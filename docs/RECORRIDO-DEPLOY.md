@@ -27,7 +27,7 @@ Durante julio el deploy productivo era el que describen los ADRs originales:
   Federation** — sin ninguna clave estática de GCP guardada en secrets.
 
 Ese stack funcionó y estuvo sirviendo tráfico real. La foto de arquitectura que
-aparece en el README y el guion del video se pensaron sobre esa base.
+aparece en el README se pensó sobre esa base.
 
 El problema apareció con la facturación: la cuenta usaba el crédito del **free
 trial de 90 días**. Cuando se agotó, seguir cobraría automáticamente contra la

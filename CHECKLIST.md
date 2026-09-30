@@ -31,12 +31,11 @@ blockchain de la cátedra).
 | 3. Ambiente productivo real | 12 | 0 | 0 | Completo |
 | 4. Pruebas del sistema | 6 | 1 | 0 | Dificultad 6 medida; 7 y 8 calculadas |
 | 5. Pipelines | 5 | 0 | 0 | Completo (1 ítem N/A) — filtro de Pipeline 4 arreglado |
-| 6. Repositorio y entrega | 5 | 0 | 1 | Falta solo el video |
+| 6. Repositorio y entrega | 6 | 0 | 0 | Completo |
 | 7. Informe | 6 | 0 | 0 | Completa — `docs/INFORME.md` |
-| **Total** | **59** | **1** | **1** | |
+| **Total** | **60** | **1** | **0** | |
 
-Queda **1 faltante**: el video explicativo (§6). Y **1 parcial**: llegar a bulks de 100.000
-(medido hasta 10.000). Todo lo demás está cerrado.
+Queda **1 parcial**: llegar a bulks de 100.000 (medido hasta 10.000). Todo lo demás está cerrado.
 
 ---
 
@@ -192,7 +191,6 @@ ya se agregaron al filtro.
 | README con instrucciones, diagrama y decisiones | ✅ | README raíz + 24 ADRs en `app/docs/adr/` |
 | Sin `.env`, credenciales ni secrets commiteados | ✅ | Verificado: solo plantillas. `.gitignore` cubre `*.pem`, `*.manual`, `.env*`, `tfvars` |
 | App ejecutable desde terminal, sin IDE | ✅ | `docker compose up --build` desde la raíz levanta el sistema completo |
-| **Video explicativo subido al repo** | ❌ | No existe |
 | **Declaración de herramientas de IA usadas** | ✅ | `docs/USO-DE-IA.md` — declaración de qué se usó y cómo (asesor, revisado, sin secretos). Falta que el equipo la confirme/ajuste |
 
 ---
@@ -300,12 +298,11 @@ Se pueden escribir y revisar sin cluster; quedan listos para el próximo desplie
       cada servicio (NCT, Redis, RabbitMQ, Postgres) y lo devuelve como JSON por el Ingress.
 - [ ] **TLS para Redis** (y opcionalmente Postgres), para cerrar el ítem de canal seguro.
 
-## Bloque 4 — Informe y entrega (§6, §7) — solo falta el video
+## Bloque 4 — Informe y entrega (§6, §7)
 
 - [x] **Gráficos comparativos**: `Pilar2/P5/graficos.py` genera 4 PNGs desde los CSVs.
 - [x] **Análisis del pool y su escalado** con las mediciones reales — `docs/INFORME.md` §3.
 - [x] **Reflexión crítica** — `docs/INFORME.md` §5.
-- [ ] **Video explicativo** recorriendo servicios, componentes y configuraciones.
 
 ---
 
