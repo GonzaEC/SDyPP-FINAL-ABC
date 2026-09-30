@@ -1,8 +1,9 @@
 # HorizontalPodAutoscaler para las cargas que escalan por demanda de tráfico.
 #
-# Funcionan en conjunto con el Cluster Autoscaler de infra/oke.tf: el HPA suma
-# pods, y si el pool `apps` se queda sin lugar, el autoscaler suma nodos (hasta
-# 5). Sin las dos piezas el escalado se corta en el primer cuello.
+# El HPA suma pods hasta el max de cada HPA. No hay Cluster Autoscaler: el
+# cluster es un nodo k3s único (ver infra/server.tf), asi que el HPA no puede
+# escalar mas alla de lo que entre en ese nodo. Con el pool lleno, los pods
+# extras quedan Pending en vez de disparar un nodo nuevo (ver ADR-029).
 #
 # Los dos deployments tienen `requests.cpu` declarado, que es requisito del HPA:
 # la utilización se calcula contra el request, no contra el límite.

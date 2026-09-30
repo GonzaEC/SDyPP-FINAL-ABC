@@ -15,11 +15,8 @@ Exporters: `redis_exporter`, `postgres_exporter`, plugin `rabbitmq_prometheus`,
 
 ## Despliegue
 
-1. **Infra** (una vez): aplicar Terraform para crear el node pool `monitoring`
-   (`infra/oke.tf`). Sin él, los pods quedan `Pending` por el taint.
-   ```bash
-   cd infra && tofu apply
-   ```
+1. **Infra**: no hay nada que aplicar. El stack corre en el mismo nodo único del
+   cluster, sin pool `monitoring` ni taints (ver `infra/server.tf` y ADR-029).
 2. **Stack**: vía Pipeline 5 (push a `k8s/gke/observability/**` o `workflow_dispatch`),
    o a mano:
    ```bash

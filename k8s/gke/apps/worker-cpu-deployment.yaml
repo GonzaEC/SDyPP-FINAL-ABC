@@ -27,9 +27,11 @@ spec:
           type: RuntimeDefault
       nodeSelector:
         pool: apps
-      # El pool apps está tainteado (apps=true:NoSchedule, ver infra/oke.tf):
-      # sin esta toleration el pod no podría programarse ahí. La separación de
-      # pools pasa de "sugerida" (nodeSelector) a "impuesta" (taint+toleration).
+      # Toleration a apps=true:NoSchedule. En el VPS single-node de Hetzner no
+      # hay taints reales — el cloud-init solo etiqueta el nodo con pool=apps
+      # (infra/server.tf) — asi que hoy es un no-op inofensivo y lo que programa
+      # el pod es el nodeSelector de arriba. Se conserva porque la separación de
+      # pools con taints es la intención arquitectónica declarada (ADR-029).
       # Importante: el TrP escala este deployment vía la API de Kubernetes;
       # los pods nuevos también llevan la toleration y programan igual.
       tolerations:
