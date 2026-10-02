@@ -93,8 +93,13 @@ ORIGINAL_DIFFICULTY_KEY = "difficulty_original"
 CPU_WORKER_REPLICAS = 2     # réplicas de worker-cpu en modo fallback
 
 
-def scale_cpu_workers(replicas: int):
-    """Escala el deployment de worker-cpu usando la API de Kubernetes in-cluster."""
+def scale_cpu_workers(replicas: int, silent: bool = False):
+    """Escala el deployment de worker-cpu usando la API de Kubernetes in-cluster.
+
+    silent=True para re-asserts periódicos (ensure_fallback_workers), que corren
+    cada 15s y no deberían floodear el log cuando no hay nada que cambiar. Los
+    errores se loguean siempre.
+    """
     try:
         token_path = "/var/run/secrets/kubernetes.io/serviceaccount/token"
         ca_path = "/var/run/secrets/kubernetes.io/serviceaccount/ca.crt"
@@ -114,7 +119,8 @@ def scale_cpu_workers(replicas: int):
             },
         )
         urllib.request.urlopen(req, context=ctx, timeout=10)
-        log.info(f"worker-cpu escalado a {replicas} réplicas")
+        if not silent:
+            log.info(f"worker-cpu escalado a {replicas} réplicas")
     except Exception as e:
         log.error(f"Error escalando worker-cpu: {e}")
 
@@ -222,9 +228,11 @@ def ensure_fallback_workers():
     if: dificultad en 0 y cero workers, sin minar nada y sin log de error.
 
     El PATCH a /scale es idempotente, asi que llamarlo en cada iteracion del
-    monitor es seguro con N replicas del TrP corriendo.
+    monitor es seguro con N replicas del TrP corriendo. Silent para no ensuciar
+    el log con un INFO cada 15s cuando no hubo cambio real (los eventos de
+    transicion ya se loguean en activate_fallback / restore_from_fallback).
     """
-    scale_cpu_workers(CPU_WORKER_REPLICAS)
+    scale_cpu_workers(CPU_WORKER_REPLICAS, silent=True)
 
 def monitor_loop():
     while True:
