@@ -1,0 +1,42 @@
+# Expone Grafana en https://grafana.tesera.tech via Traefik + cert-manager
+# (Let's Encrypt). Reemplaza al kubectl port-forward.
+#
+# Pre-requisito DNS: un A record "grafana.tesera.tech -> 178.105.41.136"
+# (IP del VPS Hetzner). Sin eso, cert-manager no puede resolver el HTTP-01.
+#
+# Credenciales: admin / admin (ver GF_SECURITY_ADMIN_* en grafana.yaml).
+apiVersion: traefik.io/v1alpha1
+kind: Middleware
+metadata:
+  name: https-redirect
+  namespace: observability
+spec:
+  redirectScheme:
+    scheme: https
+    permanent: true
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: grafana-ingress
+  namespace: observability
+  annotations:
+    cert-manager.io/cluster-issuer: letsencrypt-prod
+    traefik.ingress.kubernetes.io/router.middlewares: observability-https-redirect@kubernetescrd
+spec:
+  ingressClassName: traefik
+  tls:
+    - hosts:
+        - grafana.tesera.tech
+      secretName: grafana-tls
+  rules:
+    - host: grafana.tesera.tech
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: grafana
+                port:
+                  number: 3000

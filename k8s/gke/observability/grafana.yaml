@@ -117,6 +117,8 @@ spec:
               value: admin
             - name: GF_USERS_ALLOW_SIGN_UP
               value: "false"
+            - name: GF_SERVER_ROOT_URL
+              value: "https://grafana.tesera.tech"
             # Habilita el panel de Traces y exploración de Tempo.
             - name: GF_FEATURE_TOGGLES_ENABLE
               value: traceqlEditor
