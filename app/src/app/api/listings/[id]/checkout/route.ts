@@ -59,7 +59,15 @@ export async function POST(_req: Request, { params }: { params: Promise<{ id: st
   const user = await prisma.user.findUnique({ where: { id: buyerUserId } });
   if (!user) return NextResponse.json({ error: "user_not_found" }, { status: 404 });
 
-  const payment = await prisma.$transaction(async (tx) => {
+  // Reserva atómica. El índice único parcial `payment_one_active_per_listing`
+  // garantiza ≤1 reserva activa (PENDING/APPROVED) por listing: si dos compras
+  // concurrentes intentan tomar el MISMO listing, la segunda viola el
+  // constraint (P2002) y la traducimos a "en proceso" — así el segundo
+  // comprador NO llega a pagar. Sin esto, ambas reservaban el mismo listing
+  // (race TOCTOU: findFirst dice que no hay y los dos pasan a create).
+  let payment;
+  try {
+    payment = await prisma.$transaction(async (tx) => {
       const txClient = tx as Prisma.TransactionClient;
       const activePayment = await txClient.payment.findFirst({
         where: {
@@ -84,10 +92,18 @@ export async function POST(_req: Request, { params }: { params: Promise<{ id: st
         },
       });
     });
+  } catch (err) {
+    // P2002 = otra compra concurrente ya reservó este listing (índice único parcial).
+    if (err && typeof err === "object" && "code" in err && (err as { code?: string }).code === "P2002") {
+      payment = null;
+    } else {
+      throw err;
+    }
+  }
 
   if (!payment) {
     return NextResponse.json(
-      { error: "listing_checkout_in_progress", message: "Esta reventa ya estÃ¡ siendo procesada por otra compra." },
+      { error: "listing_checkout_in_progress", message: "Esta reventa ya está siendo procesada por otra compra." },
       { status: 409 },
     );
   }
