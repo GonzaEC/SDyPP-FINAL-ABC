@@ -680,6 +680,7 @@ def tx_mint(tx: MintTx):
         "event_id": tx.event_id,
         "submitted_at": str(time.time()),
     })
+    log.info(f"mint recibido op_id={op_id} event={tx.event_id} tickets={tx.ticket_count} to={tx.organizer_pubkey[:16]}...")
     return {"op_id": op_id, "status": "PENDING"}
 
 @app.post("/tx/transfer", status_code=202)
@@ -718,6 +719,7 @@ def tx_transfer(tx: TransferTx):
         "ticket_id": tx.ticket_id,
         "submitted_at": str(time.time()),
     })
+    log.info(f"transfer recibido op_id={op_id} ticket={tx.ticket_id} from={tx.from_pubkey[:16]}... to={tx.to_pubkey[:16]}... reason={tx.reason}")
     return {"op_id": op_id, "status": "PENDING"}
 
 @app.get("/ops/{op_id}")
@@ -830,6 +832,7 @@ def _mine_one_block():
 
         mine_start = time.time()
         safe_basic_publish('tareas_pool', json.dumps(tarea_completa))
+        log.info(f"bloque armado index={block['index']} task_id={task_id} txs={pending_count} dificultad={difficulty}")
 
         # Esperar solución.
         solucion = wait_for_solution(task_id, MINING_TIMEOUT_SECONDS, data=data, difficulty=difficulty)
@@ -868,6 +871,7 @@ def _mine_one_block():
             return None
 
         NCT_VALIDATION_SECONDS.labels(difficulty=difficulty).observe(time.time() - validation_start)
+        log.info(f"solucion validada task_id={task_id} nonce={nonce} hash={hash_recibido[:16]}... validacion={time.time()-validation_start:.3f}s")
         block["nonce"] = nonce
         block["block_hash"] = hash_recibido
         if not validate_block(block, ultimo["block_hash"]):
@@ -881,6 +885,7 @@ def _mine_one_block():
         r.ltrim("pending_transactions", pending_count, -1)
 
         confirmed_at = time.time()
+        log.info(f"bloque {block['index']} guardado hash={block['block_hash'][:16]}... txs={pending_count} tiempo_total={confirmed_at-mine_start:.3f}s")
         NCT_BLOCKS.inc()
         NCT_MINING_SECONDS.labels(difficulty=difficulty).observe(confirmed_at - mine_start)
         mining_span.set_attribute("block_index", block["index"])
